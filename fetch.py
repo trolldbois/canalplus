@@ -91,16 +91,28 @@ class MainFetcher(Fetcher):
   def __init__(self):
     Fetcher.__init__(self)
 
-  def run(self):
+  def fromFile(self,filename):
+    self.data=file(filename).read()
+    self.makeAll()
+
+  def fetch(self):
     # make the request
     log.debug('requesting %s'%(self.ROOTURL))
     Fetcher.request(self,self.ROOTURL)
-    self.data=main.handleResponse()
+    self.data=self.handleResponse()
+    self.makeAll()
+    
+  def makeAll(self):
     self.makeThemes()
-    for t in self.themes:
+    for t in self.themes.values():
       log.debug('BEFORE %s has %d categories'%(t,len(t.categories)))
-      self.makeCategories(t)
+      cats=self.makeCategories(t)
       log.debug('AFTER %s has %d categories'%(t,len(t.categories)))
+      for cat in cats:
+        emms=self.makeEmissions(cat)
+        log.debug(' %s has %d emission'%(cat,len(emms)))
+      #
+    #
     return self.data
 
   def makeThemes(self):
@@ -110,7 +122,10 @@ class MainFetcher(Fetcher):
     self.root=lxml.html.fromstring(self.data)
     #themes = '/html/body/div[2]/div[9]/div[3-7]/h2'
     themesId='/html/body/div[2]/div[9]/div[position()>2 and position()<8]'
-    self.themes=[Theme(theme) for theme in self.root.xpath(themesId)]
+    themes=[Theme(theme) for theme in self.root.xpath(themesId)]
+    self.themes=dict()
+    for t in themes:
+      self.themes[t.text]=t
     return self.themes
 
   def makeCategories(self,theme):
@@ -122,24 +137,10 @@ class MainFetcher(Fetcher):
 
   def makeEmissions(self,category):
     #
-    emissions=dict()
-    catId='./div/h3'
-    catElements=themeEl.xpath(catId)
-    for catEl in catElements:
-      categories[catEl.text]=themeEl
-    self.themes=themes
-    return self.themes
-
-    
-  def parse(self):
-    root=lxml.html.fromstring(self.data)
-    menu=root.xpath('/html/body/div[2]/div[9]')[0]
-    #menu=root.get_element_by_id('nav')
-    #menutxt=tostring(menu, pretty_print=True, method="html")
-    #themes = '/html/body/div[2]/div[9]/div[3-7]/h2'
-    themesId='/html/body/div[2]/div[9]/div[position()>2 and position()<8]/h2/a'
-    themes=root.xpath(themesId)
-    categoriesId='/html/body/div[2]/div[9]/div[3]/div/h3'
+    emPath='..//a'
+    emissions=[Emission(em) for em in category.element.xpath(emPath)]
+    category.addEmissions(emissions)
+    return emissions
 
 
 class Element():
@@ -191,7 +192,7 @@ class Category(Element):
     if emissions is not None and len(emissions) >0:
       self.addEmissions(emissions)
   def addEmissions(self,emms):
-    adds=[em for em in emms if em.text not in self.emmissions]
+    adds=[em for em in emms if em.text not in self.emissions]
     for emm in adds:
       self.emissions[emm.text]=emm
   #
@@ -201,35 +202,248 @@ class Category(Element):
 
 
 class Emission(Element):
-  prefix='/pid(\d)+.*'
-  url=None
+  aPath='.'
+  pidRE='.+pid(\d+).+'
+  pid=None
   def __init__(self,hrefEl):
-    Emissions(self,hrefel)
-    self.url=self.element.get('href')
-    self.parse()
+    Element.__init__(self,hrefEl)
+    if self.text is None:
+      self.text = self.url
+    if self.text is None:
+      self.text=''
+    self.getPid()
     
   def writeToFile(self,dirname='./'):
     fout=file(os.path.sep.join([dirname,self.prefix+'%s'%self.id]),'w')
     fout.write(self.data)
 
-  def parse(self):
-    #f='jobOffer.1'
-    #tree= lxml.html.parse(f)
-    #root=tree.getroot()
-    root=lxml.html.fromstring(self.data)
-
+  def getPid(self):
+    if self.pid != None:
+      return self.pid
+    if self.url is None :
+      return None
+    pids=re.findall(self.pidRE,self.url)
+    if len(pids) !=1:
+      log.warning('Erreur while parsing PID')
+      return None
+    self.pid=int(pids[0])
+    return self.pid
+  #
   def __repr__(self):
-    return '<Job page %s : %s/%s>'%(self.url,self.id,self.title)  
+    return '<Emission %s pid="%s">'%(self.text.encode('utf8'),self.pid)  
+
+
+class EmissionNotFetchable(Exception):
+  def __init__(self,emission):
+    self.emission=emission
+  def __str__(self):
+    return repr(self,value)
+  
+class EmissionFetcher(Fetcher):
+  vidRE='.vid=(\d+)'
+  def __init__(self):
+    Fetcher.__init__(self)
+
+  def getUrl(self,emission):
+    url=emission.url
+    if url is None or len(url) == 0:
+      raise EmissionNotFetchable(emission)
+    return url
+
+  def fromFile(self,filename):
+    self.data=file(filename).read()
+    return self.makeAll()
+
+  def fetch(self,emission):
+    url=self.getUrl(emission)
+    # make the request
+    log.debug('requesting %s'%(url))
+    Fetcher.request(self,url)
+    self.data=self.handleResponse()
+    return self.makeAll()
+    
+  def makeAll(self):
+    videos=self.makeVideoIds()
+    return videos
+    
+  def makeVideoIds(self):
+    root=lxml.html.fromstring(self.data)
+    contenu=root.xpath('id("contenuOnglet")')[0]
+    vidz=contenu.xpath('.//h4')
+    videos=[]
+    for videoLink in vidz:
+      title=videoLink.xpath('string()').strip()
+      vid=re.findall(self.vidRE,videoLink.xpath('./a')[0].get('href'))[0]
+      myvid=Video(title,vid)
+      videos.append(myvid)
+    return videos
+
+class Video():
+  srcUrl='http://service.canal-plus.com/video/rest/getVideosLiees/cplus/%d'
+  bd=None
+  hi=None
+  hd=None
+  def __init__(self,name,vid):
+    self.name=name
+    self.vid=int(vid)
+    self.url=self.srcUrl%(self.vid)
+  #
+  def update(self,title,subtitle,bd,hi,hd):
+    self.title=title
+    self.subtitle=subtitle
+    self.name='%s - %s'%(self.title,self.subtitle)
+    self.bd=bd
+    self.hi=hi
+    self.hd=hd
+  #
+  def fetchStream(self):
+    url=self.hd
+    log.debug(self.mplayer %(url))
+  #
+  def __repr__(self):
+    if self.hd is not None:
+      return "<Video %d: %s %s>"%(self.vid,self.name, self.hd)
+    else:
+      return "<Video %d: %s>"%(self.vid,self.url)
+
+class VideoFetcher(Fetcher):
+  cache=None
+  videosPath='/VIDEOS/VIDEO'
+  idPath='./ID'
+  infoTitrePath='./INFOS/TITRAGE/TITRE'
+  infoSousTitrePath='./INFOS/TITRAGE/SOUS_TITRE'
+  # ./TITRE + ./SOUS_TITRE
+  linkBDPath='./MEDIA/VIDEOS/BAS_DEBIT'
+  linkHIPath='./MEDIA/VIDEOS/HAUT_DEBIT'
+  linkHDPath='./MEDIA/VIDEOS/HD'
+  def __init__(self):
+    Fetcher.__init__(self)
+    self.cache=dict()
+    #check for mplayer
+    self.mplayer="mplayer %s"
+    pass
+
+  def fromFile(self,filename):
+    self.data=file(filename).read()
+    self.makeAll()
+
+  def fetch(self,video):
+    # make the request
+    log.debug('requesting %s'%(video.url))
+    Fetcher.request(self,video.url)
+    self.data=self.handleResponse()
+    self.makeAll()
+    
+  def makeAll(self):
+    self.parse()
+    pass
+
+  def parse(self):
+    # on recupere plusieurs vieos en realite ...
+    root=lxml.etree.fromstring(self.data)
+    vidz=root.xpath(self.videosPath)
+    for desc in vidz:
+      mid=int(desc.xpath(self.idPath)[0].text)
+      if mid not in self.cache:
+        name='%s - %s'%(desc.xpath(self.infoTitrePath)[0].text,desc.xpath(self.infoSousTitrePath)[0].text)
+        self.cache[mid]=Video(name,mid)
+      # all      
+      self.cache[mid].update( desc.xpath(self.infoTitrePath)[0].text,
+                desc.xpath(self.infoSousTitrePath)[0].text,
+                desc.xpath(self.linkBDPath)[0].text,
+                desc.xpath(self.linkHIPath)[0].text,
+                desc.xpath(self.linkHDPath)[0].text)
+    pass
+    
+def dumpAll():
+  logging.basicConfig(level=logging.DEBUG)
+  main=MainFetcher()
+  ef=EmissionFetcher()
+  vf=VideoFetcher()
+  # my cache is in VideoFetcher
+  # dump all here
+  fout=file('urls','w')
+  oldcache=vf.cache.copy()
+  # run....
+  data=main.fetch()
+  # unravel all
+  for t in main.themes.values():
+    print t
+    for c in t.categories.values():
+      print '\t',c
+      for e in c.emissions.values():
+        print '\t\t',e
+        # fetch each Emission page   
+        videos=ef.fetch(e)
+        # we've got a bunch of video Ids...
+        # normally, we shoud it the XML Desc only once by emission 
+        # because it contains multiple videos desc
+        for vid in videos:
+          print '\t\t\t',vid
+          # but we are lazy, so we hammer canalplus server.
+          vf.fetch(vid)
+          # we write new infos in file....
+          newcache=set(vf.cache) - set(oldcache)
+          newitems=[vf.cache[item] for item in newcache] 
+          for v in newitems:
+            fout.write( ('%s ; %s\n'%(v.hd,v.name)).encode('utf8'))
+          fout.flush()
+          oldcache=vf.cache.copy()
+  # tafn
+  fout.close()
+
+def test():
+  #e=main.themes.values()[1].categories.values()[2].emissions.values()[2]
+  #print e
+  #print e.url
+
+  ef=EmissionFetcher()
+  #videos=ef.fetch(e)
+  videos=ef.fromFile('guignols.html')
+  print videos
+
+
+  vf=VideoFetcher()
+  vf.fromFile('419796')
+
+  for vfk,vf in vf.cache.items():
+    print vfk,vf
+
+    
+
+  logging.basicConfig(level=logging.DEBUG)
+  main=MainFetcher()
+  #data=main.run()
+
+  #data=main.fromFile('index.html')
+
+  if False:
+    for t in main.themes.values():
+      print t
+      for c in t.categories.values():
+        print '\t',c
+        for e in c.emissions.values():
+          print '\t\t',e
+
+  #e=main.themes.values()[1].categories.values()[2].emissions.values()[2]
+  #print e
+  #print e.url
+
+  ef=EmissionFetcher()
+  #videos=ef.fetch(e)
+  videos=ef.fromFile('guignols.html')
+  print videos
+
+
+  vf=VideoFetcher()
+  vf.fromFile('419796')
+
+  for vfk,vf in vf.cache.items():
+    print vfk,vf
 
 
 
-logging.basicConfig(level=logging.DEBUG)
-main=MainFetcher()
-data=main.run()
-
-for t in main.themes:
-  print t
-  for c in t.categories.values():
-    print '\t',c
+#
+dumpAll()
 
 
