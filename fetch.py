@@ -237,7 +237,7 @@ class EmissionNotFetchable(Exception):
   def __init__(self,emission):
     self.emission=emission
   def __str__(self):
-    return repr(self,value)
+    return 'EmissionNotFetchable %s'%self.emission
   
 class EmissionFetcher(Fetcher):
   vidRE='.vid=(\d+)'
@@ -260,10 +260,15 @@ class EmissionFetcher(Fetcher):
     log.debug('requesting %s'%(url))
     Fetcher.request(self,url)
     self.data=self.handleResponse()
+    if(self.data is None):
+      raise EmissionNotFetchable(emission)
     return self.makeAll()
     
   def makeAll(self):
-    videos=self.makeVideoIds()
+    try:
+      videos=self.makeVideoIds()
+    except IndexError,e:
+      raise EmissionNotFetchable('')
     return videos
     
   def makeVideoIds(self):
@@ -295,6 +300,15 @@ class Video():
     self.bd=bd
     self.hi=hi
     self.hd=hd
+  def getLink(self):
+    ret=self.hd
+    if ret is None or len(ret)==0:
+      ret = self.hi
+    if ret is None or len(ret)==0:
+      ret = self.bd
+    if ret is None or len(ret)==0:
+      ret = 'file://about:bad_links/'
+    return ret
   #
   def fetchStream(self):
     url=self.hd
@@ -302,7 +316,7 @@ class Video():
   #
   def __repr__(self):
     if self.hd is not None:
-      return "<Video %d: %s %s>"%(self.vid,self.name, self.hd)
+      return "<Video %d: %s %s>"%(self.vid,self.name, self.getLink())
     else:
       return "<Video %d: %s>"%(self.vid,self.url)
 
@@ -347,20 +361,27 @@ class VideoFetcher(Fetcher):
       if mid not in self.cache:
         name='%s - %s'%(desc.xpath(self.infoTitrePath)[0].text,desc.xpath(self.infoSousTitrePath)[0].text)
         self.cache[mid]=Video(name,mid)
-      # all      
+      # all
+      hd=desc.xpath(self.linkHDPath)
+      if hd is None or len(hd) <1:
+        hd=None
+      else:
+        hd = hd[0].text
       self.cache[mid].update( desc.xpath(self.infoTitrePath)[0].text,
                 desc.xpath(self.infoSousTitrePath)[0].text,
                 desc.xpath(self.linkBDPath)[0].text,
                 desc.xpath(self.linkHIPath)[0].text,
-                desc.xpath(self.linkHDPath)[0].text)
+                hd)
     pass
     
 def dumpAll():
-  logging.basicConfig(level=logging.DEBUG)
+  logging.basicConfig(filename='log',level=logging.DEBUG)
   main=MainFetcher()
   ef=EmissionFetcher()
   vf=VideoFetcher()
   # my cache is in VideoFetcher
+  # other cache in filesytem
+  vidCache=os.listdir('cache/')
   # dump all here
   fout=file('urls','w')
   oldcache=vf.cache.copy()
@@ -373,20 +394,31 @@ def dumpAll():
       print '\t',c
       for e in c.emissions.values():
         print '\t\t',e
-        # fetch each Emission page   
-        videos=ef.fetch(e)
+        # fetch each Emission page
+        try:
+          videos=ef.fetch(e)
+        except EmissionNotFetchable,e:
+          log.warning(e)
+          videos=[]
         # we've got a bunch of video Ids...
         # normally, we shoud it the XML Desc only once by emission 
         # because it contains multiple videos desc
         for vid in videos:
           print '\t\t\t',vid
           # but we are lazy, so we hammer canalplus server.
+          if str(vid.vid) in vidCache:
+            # except if we already have it
+            print 'saved'
+            continue
           vf.fetch(vid)
           # we write new infos in file....
           newcache=set(vf.cache) - set(oldcache)
           newitems=[vf.cache[item] for item in newcache] 
           for v in newitems:
             fout.write( ('%s ; %s\n'%(v.hd,v.name)).encode('utf8'))
+            mycache=file('cache/%d'%v.vid,'w')
+            mycache.write('')
+            mycache.close()
           fout.flush()
           oldcache=vf.cache.copy()
   # tafn
