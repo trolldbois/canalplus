@@ -56,6 +56,8 @@ class Emission(Element):
   pid=None
   # the regexp to get an Video Id from a url
   vidRE='.vid=(\d+)'
+  #categorie
+  cat=None
   def __init__(self,hrefEl):
     Element.__init__(self,hrefEl)
     if self.text is None:
@@ -63,6 +65,10 @@ class Emission(Element):
     if self.text is None:
       self.text=''
     self.getPid()
+    return
+
+  def setCategorie(self,cat):
+    self.cat=cat
     return
     
   def getPid(self):
@@ -124,7 +130,7 @@ class Emission(Element):
     return self.videos
   #
   def __repr__(self):
-    return '<Emission %s pid="%s">'%(self.text.encode('utf8'),self.pid)  
+    return '<Emission %s pid="%s">'%(repr(self.text),self.pid)  
 
 
 
@@ -132,11 +138,32 @@ class Emission(Element):
 
 class EmissionDatabase(Database):
   table='emission'
+  schema="(vid INT UNIQUE, cid INT, url VARCHAR(1000) UNIQUE, desc VARCHAR(1000) UNIQUE)"
+  __SELECT_PID="SELECT vid, cid, url, desc from ? WHERE pid=?"
+  __SELECT_CID="SELECT vid, cid, url, desc from ? WHERE cid=?"
+  __INSERT_ALL="INSERT IGNORE INTO ? (vid, cid, url, desc) VALUES (?,?,?,?)"
   def __init__(self):
-    Database.__init__(self,table)
-  def update(self,emission):
-    pass
-  # getter , setter
+    Database.__init__(self,self.table)
+    self.checkOrCreateTable()
+    return
+            
+  def select(self,elId):
+    cursor=self.conn.cursor()
+    cursor.execute(self.__SELECT_PID,(self.table,elId,))
+    return cursor
+
+  def insertMany(self, emissions):
+    ''' elList = [ <Video>,..]
+    '''
+    l=[(self.table,em.pid,em.cat.getId(),em.url,em.text) for em in emissions]
+    self.conn.execute('BEGIN TRANSACTION')
+    try:
+      self.conn.executemany(self.__INSERT_ALL,l)
+      self.conn.commit()
+    except Exception, e:
+      self.conn.rollback()
+      raise e
+    return
 
 
 

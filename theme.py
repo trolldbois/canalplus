@@ -5,11 +5,11 @@
 #
 
 
-import logging
+import logging, re
 import lxml.html
 
 from core import Database,Element,Fetcher
-from categorie import Category
+from categorie import Categorie,CategorieBuilder
 from emission import Emission
 
 log=logging.getLogger('theme')
@@ -36,9 +36,11 @@ class Theme(Element):
   '''
   categories=None
   aPath='./h2[1]/a[1]'
+  tidRE='.+pid(\d+).+'
   data=None
-  themes=None
   root=None
+  text=None
+  tid=None
   #
   def __init__(self,el,categories=None):
     Element.__init__(self,el)
@@ -52,9 +54,39 @@ class Theme(Element):
     for cat in adds:
       self.categories[cat.text]=cat
     return
+    
+  def getId(self):
+    '''      Get theme's unique identifier.    '''
+    if self.tid != None:
+      return self.tid
+    # if there is url, we can parse it to get the TID
+    if self.url is not None :
+      # TID is in the URL
+      tids=re.findall(self.tidRE,self.url)
+      if len(tids) !=1:
+        log.warning('Erreur while parsing TID')
+        return None
+      self.tid=int(tids[0])
+    else:
+      # find it in DB ?
+      db=ThemeDatabase()
+      value=db[self.text]
+      if value is None:
+        self.tid=None
+      else:
+        self.tid=value.tid
+    return self.tid
+    
+  def save(self):
+    db=ThemeDatabase()
+    self.getId()
+    if self.tid is None:
+      raise Wtf()
+    db[self.tid]=self
+    return
   #
   def __repr__(self):
-    return '<Theme %s>'%(self.text.encode('utf8'))  
+    return '<Theme %d: %s>'%(self.getId(), repr(self.text))  
 
 class Main:
   '''
@@ -97,7 +129,7 @@ class Main:
 
   def makeCategories(self,theme):
     catPath='./div/h3'
-    categories=[Category(cat) for cat in theme.element.xpath(catPath)]
+    categories=[Categorie(cat) for cat in theme.element.xpath(catPath)]
     theme.addCategories(categories)
     return categories
 
@@ -111,7 +143,77 @@ class ThemeDatabase(Database):
   '''
     Database access layer for Theme.
   '''
-  pass
+  table="themes"
+  schema="(tid INT UNIQUE, url VARCHAR(1000) UNIQUE, desc VARCHAR(1000) UNIQUE)"
+  __SELECT_ALL="SELECT tid, url, desc from %s"
+  __SELECT_ID="SELECT tid, url, desc from %s WHERE tid=?"
+  __SELECT_DESC="SELECT tid, url, desc from %s WHERE desc LIKE ?"
+  __INSERT_ALL="INSERT INTO %s (tid, url, desc) VALUES (?,?,?)"
+  __UPDATE_ALL="UPDATE %s SET url=?, desc=? WHERE tid = ?"
+  def __init__(self):
+    Database.__init__(self,self.table)
+    self.checkOrCreateTable()
+    return
+            
+  def __getitem__(self,key):
+    try:
+      tid=int(key)
+      c=self.selectByID(tid)
+      ret=c.fetchone()
+      if ret is None:
+        return None
+      theme=ThemePOPO()
+      theme.tid,theme.url,theme.text=ret
+      return theme
+    except ValueError,e:
+      pass
+    # not an int, let's try by name
+    try:
+      c=self.selectByName(key)
+      ret=c.fetchone()
+      if ret is None:
+        return None
+      theme=ThemePOPO()
+      theme.tid,theme.url,theme.text=ret
+      return theme
+    except ValueError,e:
+      pass
+    return None
 
+  def values(self):
+    cursor=self.conn.cursor()
+    cursor.execute(self.__SELECT_ALL%(self.table))
+    values=[ThemePOPO(tid,url,text) for tid,url,text in cursor.fetchall()]
+    log.debug('%d themes loaded'%(len(values)) )
+    return values
+    
+
+  def insertmany(self, themes):
+    args=[(theme.tid,theme.url,theme.text,) for theme in themes]
+    Database.insertmany(args)
+    return
+    
+  def updatemany(self,themes):
+    args=[(theme.url,theme.text,theme.tid,) for theme in themes]
+    Database.updatemany(args)
+    return
+
+
+class ThemePOPO(Theme):
+  def __init__(self,tid=None,url=None,text=None):
+    self.tid=tid
+    self.url=url
+    self.text=text
+    self.categories=dict()
+
+class ThemeBuilder:
+  def loadDb(self):
+    tdb=ThemeDatabase()
+    themes=tdb.values()
+    for theme in themes:
+      cb=CategorieBuilder()
+      theme.addCategories(cb.loadForTheme(theme))
+      
+    return themes
 
 

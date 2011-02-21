@@ -5,7 +5,7 @@
 #
 
 
-import logging,os
+import codecs,logging,os
 
 from core import *
 from categorie import *
@@ -26,7 +26,12 @@ class FileFetcher:
     '''
       Loads a page content from file on disk.
     '''
-    data=file(self.filename).read()
+    data=codecs.open(self.filename,"r").read()
+    #try:
+    #  data=codecs.open(self.filename,"r","utf-8" ).read()
+    #except UnicodeDecodeError,e:
+    #  data=codecs.open(self.filename,"r","iso-8859-15" ).read()
+    #  #data=unicode(data,'utf-8')
     return data
 
 
@@ -81,6 +86,16 @@ def dumpAll():
   # tafn
   fout.close()
 
+
+def printTree(themes):
+  for t in themes:
+    print t
+    for c in t.categories.values():
+      print '\t',c
+      for e in c.emissions.values():
+        print '\t\t',e
+
+
 def test():
   #logging.basicConfig(level=logging.DEBUG)
   main=Main()
@@ -88,12 +103,9 @@ def test():
   main.parseContent(filefetcher)
 
   if True:
-    for t in main.themes.values():
-      print t
-      for c in t.categories.values():
-        print '\t',c
-        for e in c.emissions.values():
-          print '\t\t',e
+    printTree(main.themes.values())
+    
+  return
 
   # (fake) loading a Emission page
   ## make up an url
@@ -126,9 +138,15 @@ def test():
     print s
   
 
-
+def showDb():
+  logging.basicConfig(level=logging.DEBUG)
+  #read themes
+  tb=ThemeBuilder()
+  themes=tb.loadDb()
+  printTree(themes)
 
 #
 #dumpAll()
-test()
+#test()
+showDb()
 

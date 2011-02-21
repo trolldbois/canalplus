@@ -6,7 +6,7 @@
 
 
 
-import httplib, logging,re, sqlite3
+import httplib, logging, os, re, sqlite3
 import StringIO, gzip
 #mechanize
 from lxml.etree import tostring
@@ -83,11 +83,14 @@ class Fetcher():
 
 
 class Element():
+  encoding='utf-8'
   element=None
   a=None
   text=None
   url=None
   def __init__(self,el):
+    if el is None:
+      return
     self.element=el
     log.debug('Creating a %s'%self.__class__.__name__)
     res=self.element.xpath(self.aPath)
@@ -102,7 +105,10 @@ class Element():
       log.debug('TEXT %s '%(self.text))
       self.url=self.a.get('href')
       log.debug('url %s '%(self.url))
-
+    #if self.text is not None:
+    #  #print self.text
+    #  #self.text=self.text.decode(self.encoding)
+    return    
 
 class Database:
   filename=None
@@ -136,7 +142,7 @@ class Database:
     '''
     Check Table or creates it.
     '''
-    Database.checkOrCreate()
+    self.checkOrCreate()
     try:
       self.conn.execute("CREATE TABLE IF NOT EXISTS %s %s"%(self.table,self.schema) )
       self.conn.commit()
@@ -144,12 +150,45 @@ class Database:
       self.conn.rollback()
       raise e
     pass
-            
-  def select(self,el):
-    raise NotImplementedError()
-  def update(self,el):
-    raise NotImplementedError()
+    
+  def selectByID(self,elId):
+    cursor=self.conn.cursor()
+    cursor.execute(self.__SELECT_ID%(self.table),(elId,))
+    return cursor
   
+  def selectByName(self,desc):
+    cursor=self.conn.cursor()
+    cursor.execute(self.__SELECT_DESC%(self.table),(desc,))
+    return cursor
+ 
+  def insertmany(self, args):
+    self.conn.execute('BEGIN TRANSACTION')
+    try:
+      self.conn.executemany(self.__INSERT_ALL%self.table,args)
+      self.conn.commit()
+    except Exception, e:
+      self.conn.rollback()
+      raise e
+    return
+
+  def updatemany(self, args):
+    self.conn.execute('BEGIN TRANSACTION')
+    try:
+      self.conn.executemany(self.__INSERT_ALL%self.table,args)
+      self.conn.commit()
+    except Exception, e:
+      self.conn.rollback()
+      raise e
+    return
   
+  def __setitem__(self,key,item):
+    myID=int(key)
+    #except ValueError,e:
+    if self[myID] is None:
+      self.insertMany([item])
+    else:
+      self.updateMany([item])
+    return
+    
   
   

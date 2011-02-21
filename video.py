@@ -128,7 +128,7 @@ class Video():
 
   #
   def __repr__(self):
-    return "<Video %d-%d: %s>"%(self.pid, self.vid,self.name)
+    return "<Video %d-%d: %s>"%(self.pid, self.vid,repr(self.name))
 
 
 
