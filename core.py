@@ -9,6 +9,7 @@
 import httplib, logging,re, sqlite3
 import StringIO, gzip
 #mechanize
+from lxml.etree import tostring
 
 log=logging.getLogger('core')
 
@@ -92,7 +93,6 @@ class Element():
     res=self.element.xpath(self.aPath)
     if len(res) != 1:
       log.debug('DOM error, falling back to xpath string(), no url ')
-      print ''
     if len(res)==0:
       self.text=self.element.xpath('string()')
     else:

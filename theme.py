@@ -16,25 +16,61 @@ log=logging.getLogger('theme')
 
 
 
-class ThemesFetcher(Fetcher):
+class MainFetcher(Fetcher):
   ROOTURL='/'
-  data=None
-  themes=None
-  root=None
   def __init__(self):
     Fetcher.__init__(self)
-
-  def fromFile(self,filename):
-    self.data=file(filename).read()
-    self.makeAll()
-
+    return
+  
   def fetch(self):
     # make the request
     log.debug('requesting %s'%(self.ROOTURL))
     Fetcher.request(self,self.ROOTURL)
-    self.data=self.handleResponse()
+    data=self.handleResponse()
+    return data    
+
+
+class Theme(Element):
+  '''
+    Emission are grouped into categories, which are part off one of the 6 main Themes.
+  '''
+  categories=None
+  aPath='./h2[1]/a[1]'
+  data=None
+  themes=None
+  root=None
+  #
+  def __init__(self,el,categories=None):
+    Element.__init__(self,el)
+    self.categories=dict()
+    if categories is not None and len(categories) >0:
+      self.addCategories(categories)
+    return
+  #
+  def addCategories(self,cats):
+    adds=[cat for cat in cats if cat.text not in self.categories]
+    for cat in adds:
+      self.categories[cat.text]=cat
+    return
+  #
+  def __repr__(self):
+    return '<Theme %s>'%(self.text.encode('utf8'))  
+
+class Main:
+  '''
+    Emission are grouped into categories, which are part off one of the 6 main Themes.
+  '''
+  categories=None
+  aPath='./h2[1]/a[1]'
+  data=None
+  themes=None
+  root=None
+  #
+  def parseContent(self,fetcher=MainFetcher()):
+    self.data=fetcher.fetch(self)
     self.makeAll()
-    
+    return
+  #
   def makeAll(self):
     self.makeThemes()
     for t in self.themes.values():
@@ -44,8 +80,6 @@ class ThemesFetcher(Fetcher):
       for cat in cats:
         emms=self.makeEmissions(cat)
         log.debug(' %s has %d emission'%(cat,len(emms)))
-      #
-    #
     return self.data
 
   def makeThemes(self):
@@ -62,38 +96,16 @@ class ThemesFetcher(Fetcher):
     return self.themes
 
   def makeCategories(self,theme):
-    #
     catPath='./div/h3'
     categories=[Category(cat) for cat in theme.element.xpath(catPath)]
     theme.addCategories(categories)
     return categories
 
   def makeEmissions(self,category):
-    #
     emPath='..//a'
     emissions=[Emission(em) for em in category.element.xpath(emPath)]
     category.addEmissions(emissions)
     return emissions
-
-class Theme(Element):
-  '''
-    Emission are grouped into categories, which are part off one of the 6 main Themes.
-  '''
-  categories=None
-  aPath='./h2[1]/a[1]'
-  def __init__(self,el,categories=None):
-    Element.__init__(self,el)
-    self.categories=dict()
-    if categories is not None and len(categories) >0:
-      self.addCategories(categories)
-  #
-  def addCategories(self,cats):
-    adds=[cat for cat in cats if cat.text not in self.categories]
-    for cat in adds:
-      self.categories[cat.text]=cat
-  #
-  def __repr__(self):
-    return '<Theme %s>'%(self.text.encode('utf8'))  
 
 class ThemeDatabase(Database):
   '''

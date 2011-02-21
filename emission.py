@@ -23,6 +23,26 @@ class EmissionNotFetchable(Exception):
   def __str__(self):
     return 'EmissionNotFetchable %s'%self.emission
   
+class EmissionFetcher(Fetcher):
+  '''
+  Http fetcher for an emission.
+  '''
+  def __init__(self):
+    Fetcher.__init__(self)
+
+  def fetch(self,emission):
+    '''
+      Loads a Emission Html page content from network.
+    '''
+    url=self.getUrl(emission)
+    # make the request
+    log.debug('requesting %s'%(url))
+    Fetcher.request(self,url)
+    data=self.handleResponse()
+    if(data is None):
+      raise EmissionNotFetchable(emission)
+    return data
+
 
 class Emission(Element):
   '''
@@ -45,14 +65,6 @@ class Emission(Element):
     self.getPid()
     return
     
-  def writeToFile(self,dirname='./'):
-    '''
-    save content to file <dirname>/<self.id>
-    '''
-    fout=file(os.path.sep.join([dirname,'%s'%self.id]),'w')
-    fout.write(self.data)
-    return
-
   def getPid(self):
     '''
       Get emission's unique identifier.
@@ -77,15 +89,23 @@ class Emission(Element):
       raise EmissionNotFetchable(self)
     return self.url
 
-  def parseContent(self):
+  def writeToFile(self,dirname='./'):
+    '''
+    save content to file <dirname>/<self.id>
+    '''
+    fout=file(os.path.sep.join([dirname,'%s'%self.id]),'w')
+    fout.write(self.data)
+    return
+
+  def parseContent(self,fetcherEngine=EmissionFetcher()):
     ''' Read the data to get the videos VID
     '''
-    fetcher=EmissionFetcher()
+    fetcher=fetcherEngine
     self.data=fetcher.fetch(self)
-    self.parseVideos()
+    self.getVideos()
     return
     
-  def parseVideos(self):
+  def getVideos(self):
     '''
       An Emission's videos are identified bt their VID in the url
     '''
@@ -107,44 +127,6 @@ class Emission(Element):
     return '<Emission %s pid="%s">'%(self.text.encode('utf8'),self.pid)  
 
 
-class EmissionFetcher(Fetcher):
-  '''
-  Http fetcher for an emission.
-  '''
-  def __init__(self):
-    Fetcher.__init__(self)
-
-  def fromFile(self,filename):
-    '''
-      Loads a Emission Html page content from file on disk.
-    '''
-    data=file(filename).read()
-    return data
-
-  def fetch(self,emission):
-    '''
-      Loads a Emission Html page content from network.
-    '''
-    url=self.getUrl(emission)
-    # make the request
-    log.debug('requesting %s'%(url))
-    Fetcher.request(self,url)
-    data=self.handleResponse()
-    if(data is None):
-      raise EmissionNotFetchable(emission)
-    return data
-
-
-class EmissionBuilder():
-  '''
-  Object builder from File.
-  '''
-  def fromFile(self,pid,filename):
-    '''
-      Loads a Emission Html page content from file on disk.
-    '''
-    data=file(filename).read()
-    return data
 
 
 

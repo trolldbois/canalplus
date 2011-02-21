@@ -19,11 +19,21 @@ SERVER='www.canalplus.fr'
 PORT=80
 METHOD='GET'
 
+class FileFetcher:
+  def __init__(self,filename):
+    self.filename=filename
+  def fetch(self,obj):
+    '''
+      Loads a page content from file on disk.
+    '''
+    data=file(self.filename).read()
+    return data
+
 
 
 def dumpAll():
   logging.basicConfig(filename='log',level=logging.DEBUG)
-  main=ThemesFetcher()
+  main=ThemeFetcher()
   ef=EmissionFetcher()
   vf=VideoFetcher()
   # my cache is in VideoFetcher
@@ -72,31 +82,12 @@ def dumpAll():
   fout.close()
 
 def test():
-  #e=main.themes.values()[1].categories.values()[2].emissions.values()[2]
-  #print e
-  #print e.url
+  #logging.basicConfig(level=logging.DEBUG)
+  main=Main()
+  filefetcher=FileFetcher('test/index.html')
+  main.parseContent(filefetcher)
 
-  ef=EmissionFetcher()
-  #videos=ef.fetch(e)
-  videos=ef.fromFile('test/guignols.html')
-  print videos
-
-
-  vf=VideoFetcher()
-  vf.fromFile('test/419796')
-
-  for vfk,vf in vf.cache.items():
-    print vfk,vf
-
-    
-
-  logging.basicConfig(level=logging.DEBUG)
-  main=ThemesFetcher()
-  #data=main.run()
-
-  data=main.fromFile('test/index.html')
-
-  if False:
+  if True:
     for t in main.themes.values():
       print t
       for c in t.categories.values():
@@ -104,21 +95,36 @@ def test():
         for e in c.emissions.values():
           print '\t\t',e
 
-  #e=main.themes.values()[1].categories.values()[2].emissions.values()[2]
-  #print e
-  #print e.url
+  # (fake) loading a Emission page
+  ## make up an url
+  href=lxml.etree.Element("a")
+  href.set('href','http://www.canalplus.fr/c-divertissement/pid1784-les-guignols-de-l-info.html?')
+  ## build the Emission
+  em=Emission(href)
+  print em
+  ## style faking the load
+  filefetcher=FileFetcher('test/guignols.html')
+  em.parseContent(filefetcher)
+  print em.videos
 
-  ef=EmissionFetcher()
-  #videos=ef.fetch(e)
-  videos=ef.fromFile('test/guignols.html')
-  print videos
+  # fake a Video Load
+  ## we now have a bunch of videos
+  video=[vid for vid in em.videos if vid.vid==419796][0]
+  cache=dict()
+  cache[video.vid]=video
+  #href=lxml.etree.Element("a")
+  #href.set('href','http://service.canal-plus.com/video/rest/getVideosLiees/cplus/419796')
+  #video=Video()
+  ## style faking the load
+  filefetcher=FileFetcher('test/419796')
+  newVideos=video.parseContent(filefetcher,cache)
 
-
-  vf=VideoFetcher()
-  vf.fromFile('test/419796')
-
-  for vfk,vf in vf.cache.items():
+  for vfk,vf in newVideos.items():
     print vfk,vf
+  #
+  for s in video.getStreams():
+    print s
+  
 
 
 

@@ -26,6 +26,7 @@ class Category(Element):
     adds=[em for em in emms if em.text not in self.emissions]
     for emm in adds:
       self.emissions[emm.text]=emm
+
   #
   def __repr__(self):
     return '<Category %s>'%(self.text.encode('utf8'))  
