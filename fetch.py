@@ -96,7 +96,7 @@ def test():
 
   data=main.fromFile('test/index.html')
 
-  if True:
+  if False:
     for t in main.themes.values():
       print t
       for c in t.categories.values():

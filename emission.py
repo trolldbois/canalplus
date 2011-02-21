@@ -5,18 +5,24 @@
 #
 
 
-import logging,re
-
-import lxml 
-
-#from lxml import etree
-#from lxml.etree import tostring
-#from operator import itemgetter, attrgetter
+import logging,lxml,re 
 
 from core import Database,Element,Fetcher
 from video import Video
 
 log=logging.getLogger('emission')
+
+
+
+class EmissionNotFetchable(Exception):
+  '''
+    Exception raised when the emission name is unknown or unfetchable,
+  '''
+  def __init__(self,emission):
+    self.emission=emission
+  def __str__(self):
+    return 'EmissionNotFetchable %s'%self.emission
+  
 
 class Emission(Element):
   '''
@@ -28,6 +34,8 @@ class Emission(Element):
   aPath='.'
   pidRE='.+pid(\d+).+'
   pid=None
+  # the regexp to get an Video Id from a url
+  vidRE='.vid=(\d+)'
   def __init__(self,hrefEl):
     Element.__init__(self,hrefEl)
     if self.text is None:
@@ -62,44 +70,56 @@ class Emission(Element):
       return None
     self.pid=int(pids[0])
     return self.pid
+
+  def getUrl(self):
+    ''' Some logic around an emission's url.  '''
+    if self.url is None or len(self.url) == 0:
+      raise EmissionNotFetchable(self)
+    return self.url
+
+  def parseContent(self):
+    ''' Read the data to get the videos VID
+    '''
+    fetcher=EmissionFetcher()
+    self.data=fetcher.fetch(self)
+    self.parseVideos()
+    return
+    
+  def parseVideos(self):
+    '''
+      An Emission's videos are identified bt their VID in the url
+    '''
+    self.videos=[]
+    try:
+      root=lxml.html.fromstring(self.data)
+      contenu=root.xpath('id("contenuOnglet")')[0]
+      vidz=contenu.xpath('.//h4')
+      for videoLink in vidz:
+        title=videoLink.xpath('string()').strip()
+        vid=re.findall(self.vidRE,videoLink.xpath('./a')[0].get('href'))[0]
+        myvid=Video(title,self.getPid(),vid)
+        self.videos.append(myvid)
+    except IndexError,e:
+      raise EmissionNotFetchable('')
+    return self.videos
   #
   def __repr__(self):
     return '<Emission %s pid="%s">'%(self.text.encode('utf8'),self.pid)  
 
 
-class EmissionNotFetchable(Exception):
-  '''
-    Exception raised when the emission name is unknown or unfetchable,
-  '''
-  def __init__(self,emission):
-    self.emission=emission
-  def __str__(self):
-    return 'EmissionNotFetchable %s'%self.emission
-  
 class EmissionFetcher(Fetcher):
   '''
   Http fetcher for an emission.
   '''
-  # the regexp to get an Video Id from a url
-  vidRE='.vid=(\d+)'
   def __init__(self):
     Fetcher.__init__(self)
-
-  def getUrl(self,emission):
-    '''
-      Some logic around an emission's url.
-    '''
-    url=emission.url
-    if url is None or len(url) == 0:
-      raise EmissionNotFetchable(emission)
-    return url
 
   def fromFile(self,filename):
     '''
       Loads a Emission Html page content from file on disk.
     '''
-    self.data=file(filename).read()
-    return self.makeAll()
+    data=file(filename).read()
+    return data
 
   def fetch(self,emission):
     '''
@@ -109,35 +129,22 @@ class EmissionFetcher(Fetcher):
     # make the request
     log.debug('requesting %s'%(url))
     Fetcher.request(self,url)
-    self.data=self.handleResponse()
-    if(self.data is None):
+    data=self.handleResponse()
+    if(data is None):
       raise EmissionNotFetchable(emission)
-    return self.makeAll()
-    
-  def makeAll(self):
+    return data
+
+
+class EmissionBuilder():
+  '''
+  Object builder from File.
+  '''
+  def fromFile(self,pid,filename):
     '''
-      Build a list of Videos from the emissions page.
+      Loads a Emission Html page content from file on disk.
     '''
-    try:
-      videos=self.makeVideoIds()
-    except IndexError,e:
-      raise EmissionNotFetchable('')
-    return videos
-    
-  def makeVideoIds(self):
-    '''
-      An Emission's videos are identified bt their VID in the url
-    '''
-    root=lxml.html.fromstring(self.data)
-    contenu=root.xpath('id("contenuOnglet")')[0]
-    vidz=contenu.xpath('.//h4')
-    videos=[]
-    for videoLink in vidz:
-      title=videoLink.xpath('string()').strip()
-      vid=re.findall(self.vidRE,videoLink.xpath('./a')[0].get('href'))[0]
-      myvid=Video(title,vid)
-      videos.append(myvid)
-    return videos
+    data=file(filename).read()
+    return data
 
 
 

@@ -14,15 +14,18 @@ log=logging.getLogger('video')
 
 class Video():
   '''
-    Une vieo est determinee par une url REST self.srcUrl + self.vid
+    Une video est determinee par une url REST self.srcUrl + self.vid
   '''
   srcUrl='http://service.canal-plus.com/video/rest/getVideosLiees/cplus/%d'
+  #programme ID
+  pid=None
   vid=None
   bd=None
   hi=None
   hd=None
-  def __init__(self,name,vid):
+  def __init__(self,name,pid,vid):
     self.name=name
+    self.pid=int(pid)
     self.vid=int(vid)
     self.url=self.srcUrl%(self.vid)
     return
@@ -73,9 +76,10 @@ class VideoFetcher(Fetcher):
   linkBDPath='./MEDIA/VIDEOS/BAS_DEBIT'
   linkHIPath='./MEDIA/VIDEOS/HAUT_DEBIT'
   linkHDPath='./MEDIA/VIDEOS/HD'
-  def __init__(self):
+  def __init__(self,emission):
     Fetcher.__init__(self)
     self.cache=dict()
+    self.emission=emission
     #check for mplayer
     self.mplayer="mplayer %s"
     pass
@@ -102,14 +106,15 @@ class VideoFetcher(Fetcher):
     pass
 
   def parse(self):
-    # on recupere plusieurs vieos en realite ...
+    # on recupere plusieurs videos en realite ...
     root=lxml.etree.fromstring(self.data)
     vidz=root.xpath(self.videosPath)
+    pid=self.emission.getPid()
     for desc in vidz:
       mid=int(desc.xpath(self.idPath)[0].text)
       if mid not in self.cache:
         name='%s - %s'%(desc.xpath(self.infoTitrePath)[0].text,desc.xpath(self.infoSousTitrePath)[0].text)
-        self.cache[mid]=Video(name,mid)
+        self.cache[mid]=Video(name,pid,mid)
       # all
       hd=desc.xpath(self.linkHDPath)
       if hd is None or len(hd) <1:
@@ -122,4 +127,44 @@ class VideoFetcher(Fetcher):
                 desc.xpath(self.linkHIPath)[0].text,
                 hd)
     pass
+  #
+  def save(self):
+    db=VideoDatabase()
+    db.insertMany(self.cache.values())
+    return
+    
+
+class VideoDatabase(Database):
+  table="videos"
+  schema="(vid INT, pid INT, url VARCHAR(1000), desc VARCHAR(1000))"
+  __SELECT_VID="SELECT vid, pid, url, desc from ? WHERE vid=?"
+  __SELECT_PID="SELECT vid, pid, url, desc from ? WHERE pid=?"
+  __INSERT_ALL="INSERT IGNORE INTO ? (vid, pid, url, desc) VALUES (?,?,?,?)"
+  def __init__(self):
+    Database.__init__(self,self.table)
+    self.checkOrCreateTable()
+    return
+            
+  def select(self,elId):
+    cursor=self.conn.cursor()
+    cursor.execute(__SELECT_VID,(self.table,elId,))
+    return cursor
+
+  def insertMany(self, videos):
+    ''' elList = [ <Video>,..]
+    '''
+    l=[(self.table,video.vid,video.pid,video.bd,video.hi,video.hd,video.subtitle) for video in videos]
+    self.conn.execute('BEGIN TRANSACTION')
+    try:
+      self.conn.executemany(__INSERT_ALL,l)
+      self.conn.commit()
+    except Exception, e:
+      self.conn.rollback()
+      raise e
+    return
+    
+  def update(self,el):
+    raise NotImplementedError()
+
+
 

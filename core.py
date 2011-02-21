@@ -117,15 +117,33 @@ class Database:
   def check(self):
     ''' check problems with database
     '''
-    if (os.access(self.filename,os.F_OK)):
-      raise IOError('File Exists')
-    elif (not os.access(self.filename,os.W_OK)):
+    if (not os.access(self.filename,os.W_OK)):
       raise IOError('File is not writeable')
     elif (not os.access(self.filename,os.R_OK)):
       raise IOError('File is not readable')
+    elif (self.table is None):
+      raise NotImplementedError("self.table")
+    elif (self.schema is None):
+      raise NotImplementedError("self.schema")
     return
-  def create(self):
+
+  def checkOrCreate(self):
     self.check()
+    # check database ?
+    return
+
+  def checkOrCreateTable(self):
+    '''
+    Check Table or creates it.
+    '''
+    Database.checkOrCreate()
+    try:
+      self.conn.execute("CREATE TABLE IF NOT EXISTS %s %s"%(self.table,self.schema) )
+      self.conn.commit()
+    except Exception, e:
+      self.conn.rollback()
+      raise e
+    pass
             
   def select(self,el):
     raise NotImplementedError()
