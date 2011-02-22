@@ -105,8 +105,13 @@ class Printer:
 
 def main():
   u=Update()
-  u.updateNew()
-
+  # update all emission
+  #u.updateNew()
+  ## or just the one we want
+  db=EmissionDatabase()
+  print u.updateEmission(db[1830])
+  print u.updateEmission(db[1784])
+  #
   p=Printer()
   p.lastVideos(1830)
   p.lastVideos(1784)
