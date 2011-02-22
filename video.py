@@ -56,9 +56,6 @@ class Video(Element):
   #programme ID
   pid=None
   vid=None
-  bd=None
-  hi=None
-  hd=None
   # Xpath values
   videosPath='/VIDEOS/VIDEO'
   streamPath='./MEDIA/VIDEOS/*'
@@ -107,6 +104,9 @@ class Video(Element):
     if len(self.streams) == 0:
       return None
     else:
+      for qual in ['HD','HAUT_DEBIT','BAS_DEBIT']:
+        if qual in self.streams:
+          return self.streams[qual]
       return self.streams[0]
   #
   def parseContent(self,videosCache,fetcher=VideoFetcher()):
@@ -163,7 +163,7 @@ class Video(Element):
   def save(self,update=False):
     db=VideoDatabase()
     # conditional saving
-    if update or self.getId() not in db:
+    if update or self.getId() not in db: #1
       log.debug('saving %s'%(self))
       db[self.getId()]=self
       return 1

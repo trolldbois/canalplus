@@ -217,7 +217,7 @@ class Database:
   def __setitem__(self,key,item):
     myID=int(key)
     #except ValueError,e:
-    if myID not in self:
+    if myID not in self: #costly 2
       self.insertmany([item])
     else:
       self.updatemany([item])
@@ -225,7 +225,7 @@ class Database:
     
   def __contains__(self,item):
     try:
-      self[item]
+      self[item] #1
       return True
     except KeyError,e:
       return False

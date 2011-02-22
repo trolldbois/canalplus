@@ -60,8 +60,8 @@ def printTree(themes):
 
 class Update:
   cache=dict()
-  ebuilder=None
-  vbuilder=None
+  ebuilder=EmissionBuilder()
+  vbuilder=VideoBuilder()
   def updateNew(self):
     logging.basicConfig(filename='update.log',level=logging.DEBUG)
     #logging.getLogger('core').setLevel(logging.INFO)
@@ -71,7 +71,7 @@ class Update:
     # let's update the database with new emissions
     main.save(update=False)
     # load all new videos XML files from  
-    updateVideos()
+    self.updateVideos()
     
   def resyncAll(self):
     logging.basicConfig(filename='resync.log',level=logging.DEBUG)
@@ -80,21 +80,19 @@ class Update:
     #force update
     main.save(update=True)
     # load all new videos XML files from  
-    updateVideos(True)
+    self.updateVideos(True)
 
     
   def updateVideos(self):
-    self.ebuilder=EmissionBuilder()
-    ems=ebuilder.loadDb()
-    self.vbuilder=VideoBuilder()
+    ems=self.ebuilder.loadDb()
     # we exclude already parsed Videos XMLs. the stream should be in DB.
-    self.cache=vbuilder.loadVideosWithStreams()
+    self.cache=self.vbuilder.loadVideosWithStreams()
     done=0
     # histoire de...
     #random.shuffle(ems)
     for em in ems:
       try:
-        videos=updateEmission(em.getId())
+        videos=self.updateEmission(em)
       except EmissionNotFetchable,e:
         log.warning(e)
         continue
@@ -102,32 +100,29 @@ class Update:
       log.info("[%3d/%3d] %d new videos \t %s"%(done,len(ems)-done, len(videos),em))
     return
 
-  def updateEmission(self,emId,force=False):
-    logging.basicConfig(level=logging.INFO)
+  def updateEmission(self,em,force=False):
     newVideos=set()
-    # load from db
-    db=EmissionDatabase()
-    em=db[emId]
     # Refresh content
     em.parseContent()
     ## we now have a bunch of videos XML we need to fetch
-    vbuilder=VideoBuilder()
+    cache=self.cache
     if force:
       # we go with empty cache
-      self.cache=dict()
+      cache=dict()
     cntStream=0
     for vid in em.videos.values():
       try:
-        vid.parseContent(self.cache)
+        vid.parseContent(cache)
       except VideoNotFetchable,v:
-        v.video.save()
-        v.video.streams[0].save()
+        v.video.save() ## e1
+        v.video.streams[0].save() ## s1
+        em.updateTs()
         continue
       vid.save()
       # empty cache means, we need to reload vid from cache
       # if not forced , we do not reload XML from db-stored videos
       # so streams will be empty 
-      for s in self.cache[vid.getId()].streams.values():
+      for s in cache[vid.getId()].streams.values():
         if s.save() > 0:
           cntStream+=1
           newVideos.add(vid)
@@ -137,6 +132,29 @@ class Update:
     # update timestamps
     em.updateTs()
     return newVideos
+
+class Printer:
+  def lastVideos(self,emId):
+    emDb=EmissionDatabase()
+    newVideos=set()
+    em=emDb[emId]
+    # get videos and streams
+    vBuilder=VideoBuilder()
+    em.addVideos(vBuilder.loadForEmission(em))
+    for vid in em.videos.itervalues():
+      for stream in vid.streams.itervalues():
+        print '%s %s %10s\t%s'%(em.text, vid.text,stream.quality,stream.url)
+    return em.videos
+
+class Fetcher:
+  def fetchNew(self,emId):
+    p=Printer()
+    videos=p.lastVideos(emId)
+    for video in videos.itervalues():
+      s=video.bestStream()
+      if os.access(s.makeFilename(),os.F_OK):
+        continue
+      s.fetchStream()
 
 def testGuignols():
   logging.basicConfig(level=logging.DEBUG)
@@ -219,7 +237,18 @@ def showDb():
 #showDb()
 #showTree()
 
-updateNew()
+#u=Update()
+#u.updateNew()
+
+#p=Printer()
+#p.lastVideos(1830)
+#p.lastVideos(1784)
+
+f=Fetcher()
+f.fetchNew(1830)
+f.fetchNew(1784)
+
+
 
 #testVideoXml()
 #testEmission('test/EmissionPOPO-3442')

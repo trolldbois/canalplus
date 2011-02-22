@@ -4,7 +4,7 @@
 # Copyright (C) 2011 Loic Jaquemet loic.jaquemet+python@gmail.com
 #
 
-import logging
+import logging,os,urlparse
 from core import Database,Element,Fetcher,Wtf
 
 import lxml.etree
@@ -16,22 +16,25 @@ class Stream:
   def __init__(self,vid,quality,url):
     self.vid=vid
     self.quality=quality
-    self.url=url
+    self.url=urlparse.urlparse(url).geturl()
     if self.url is None:
       raise Wtf()
   #
   def fetchStream(self):
     ''' on recupere le stream avec un outils externe ( rtmpdump )
     '''
-    url=self.url
     #rtmpdump
-    log.debug(self.mplayer %(url))
-    return
-
+    self.makeFilename()
+    log.debug("rtmpdump -r %s -o %s"%(self.url,self.filename))
+    os.system("rtmpdump -r %s -o %s"%(self.url,self.filename))
+    return self.filename
+  def makeFilename(self):
+    self.filename=os.path.sep.join(['./output',os.path.basename(self.url)])
+    return self.filename
   def save(self,update=False):
     db=StreamDatabase()
     # conditional saving
-    if self.vid not in db:
+    if self.vid not in db: # 1
       # no stream for this video
       log.debug('saving %s'%self)
       db.insertmany([self])
