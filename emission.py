@@ -7,8 +7,9 @@
 
 import logging,lxml,re 
 
-from core import Database,Element,Fetcher
-from video import Video
+from core import Database,Element,Fetcher,Wtf
+from video import Video,VideoBuilder
+import sqlite3 
 
 log=logging.getLogger('emission')
 
@@ -34,7 +35,7 @@ class EmissionFetcher(Fetcher):
     '''
       Loads a Emission Html page content from network.
     '''
-    url=self.getUrl(emission)
+    url=emission.getUrl()
     # make the request
     log.debug('requesting %s'%(url))
     Fetcher.request(self,url)
@@ -51,6 +52,7 @@ class Emission(Element):
     It an be saved to file.
     It's content is accessible by memory access to self.text
   '''
+  log=log
   aPath='.'
   pidRE='.+pid(\d+).+'
   pid=None
@@ -64,14 +66,22 @@ class Emission(Element):
       self.text = self.url
     if self.text is None:
       self.text=''
-    self.getPid()
+    self.getId()
+    self.videos=dict()
     return
 
   def setCategorie(self,cat):
     self.cat=cat
     return
+
+  def addVideos(self,vids):
+    adds=[vid for vid in vids if vid.getId() not in self.videos]
+    for vid in adds:
+      self.videos[vid.vid]=vid
+      vid.setEmission(self)
+    return
     
-  def getPid(self):
+  def getId(self):
     '''
       Get emission's unique identifier.
       Programme Id.
@@ -92,16 +102,9 @@ class Emission(Element):
   def getUrl(self):
     ''' Some logic around an emission's url.  '''
     if self.url is None or len(self.url) == 0:
+      self.writeToFile()
       raise EmissionNotFetchable(self)
     return self.url
-
-  def writeToFile(self,dirname='./'):
-    '''
-    save content to file <dirname>/<self.id>
-    '''
-    fout=file(os.path.sep.join([dirname,'%s'%self.id]),'w')
-    fout.write(self.data)
-    return
 
   def parseContent(self,fetcherEngine=EmissionFetcher()):
     ''' Read the data to get the videos VID
@@ -115,7 +118,7 @@ class Emission(Element):
     '''
       An Emission's videos are identified bt their VID in the url
     '''
-    self.videos=[]
+    self.videos=dict()
     try:
       root=lxml.html.fromstring(self.data)
       contenu=root.xpath('id("contenuOnglet")')[0]
@@ -123,49 +126,137 @@ class Emission(Element):
       for videoLink in vidz:
         title=videoLink.xpath('string()').strip()
         vid=re.findall(self.vidRE,videoLink.xpath('./a')[0].get('href'))[0]
-        myvid=Video(title,self.getPid(),vid)
-        self.videos.append(myvid)
-    except IndexError,e:
-      raise EmissionNotFetchable('')
+        self.videos[vid]=Video(vid,self.getId(),title)
+    except Exception,e:
+      log.error("%s %s"%(e, self) )
+      self.writeToFile()
+      raise EmissionNotFetchable(self)
     return self.videos
+  #
+  def save(self,update=False):
+    db=EmissionDatabase()
+    self.getId()
+    if self.pid is None:
+      #raise Wtf(self)
+      log.warning("Unparseable PID for %s"%self)
+    else:
+      try:
+        # conditional saving
+        if update or self.getId() not in db:
+          log.info('Saving new Emission %s'%self)
+          db[self.getId()]=self
+      except sqlite3.IntegrityError,e:
+        log.error('Integrity error on %s'%(self))
+        log.error(self.__dict__)
+        pass
+    return
+  def updateTs(self):
+    db=EmissionDatabase()
+    db.updateTs(self)
+    return
   #
   def __repr__(self):
     return '<Emission %s pid="%s">'%(repr(self.text),self.pid)  
 
 
 
-
-
 class EmissionDatabase(Database):
-  table='emission'
-  schema="(vid INT UNIQUE, cid INT, url VARCHAR(1000) UNIQUE, desc VARCHAR(1000) UNIQUE)"
-  __SELECT_PID="SELECT vid, cid, url, desc from ? WHERE pid=?"
-  __SELECT_CID="SELECT vid, cid, url, desc from ? WHERE cid=?"
-  __INSERT_ALL="INSERT IGNORE INTO ? (vid, cid, url, desc) VALUES (?,?,?,?)"
+  table='emissions'
+  schema="(pid INT UNIQUE, cid INT, url VARCHAR(1000) UNIQUE, desc VARCHAR(1000) UNIQUE, ts DATETIME)"
+  _SELECT_ALL="SELECT pid, cid, url, desc from %s ORDER by ts asc"
+  _SELECT_ID="SELECT pid, cid, url, desc from %s WHERE pid=?"
+  _SELECT_DESC="SELECT pid, cid, url, desc from %s WHERE desc LIKE ?"
+  _SELECT_PARENT_ID="SELECT pid, cid, url, desc from %s WHERE cid=?"
+  _INSERT_ALL="INSERT INTO %s (pid, cid, url, desc, ts) VALUES (?,?,?,?,DATETIME('now'))"
+  _UPDATE_ALL="UPDATE %s SET cid=?,url=?,desc=?,ts=DATETIME('now') WHERE pid=?"
+  _UPDATE_TS="UPDATE %s SET ts=DATETIME('now') WHERE pid=?"
   def __init__(self):
     Database.__init__(self,self.table)
     self.checkOrCreateTable()
     return
             
-  def select(self,elId):
-    cursor=self.conn.cursor()
-    cursor.execute(self.__SELECT_PID,(self.table,elId,))
-    return cursor
-
-  def insertMany(self, emissions):
-    ''' elList = [ <Video>,..]
-    '''
-    l=[(self.table,em.pid,em.cat.getId(),em.url,em.text) for em in emissions]
+  def updateTs(self, emission):
+    args=(emission.getId(),)
     self.conn.execute('BEGIN TRANSACTION')
     try:
-      self.conn.executemany(self.__INSERT_ALL,l)
+      log.debug( "%s - %s " % (self._UPDATE_TS%self.table,args) )   
+      self.conn.execute(self._UPDATE_TS%self.table,args)
       self.conn.commit()
     except Exception, e:
       self.conn.rollback()
+      log.error('%s -> %s'%(self._UPDATE_TS%self.table,args))
       raise e
     return
 
+  def insertmany(self, emissions):
+    args=[(em.pid,em.cat.getId(),em.url,em.text,) for em in emissions]
+    Database.insertmany(self,args)
+    return
 
+  def updatemany(self, emissions):
+    args=[(em.cat.getId(),em.url,em.text,em.getId(),) for em in emissions]
+    Database.updatemany(self,args)
+    return
+
+  def __getitem__(self,key):
+    try:
+      pid=int(key)
+      c=self.selectByID(pid)
+      ret=c.fetchone()
+      if ret is None:
+        raise KeyError()
+      em=EmissionPOPO(ret)
+      em.pid,em.cid,em.url,em.text=ret
+      return em
+    except ValueError,e:
+      pass
+    # not an int, let's try by name
+    try:
+      c=self.selectByName(key)
+      ret=c.fetchone()
+      if ret is None:
+        raise KeyError()
+      em=EmissionPOPO(ret)
+      em.pid,em.cid,em.url,em.text=ret
+      return em
+    except ValueError,e:
+      pass
+    raise KeyError()
+
+  def values(self):
+    cursor=self.conn.cursor()
+    cursor.execute(self._SELECT_ALL%(self.table))
+    values=[EmissionPOPO(pid,cid,url,text) for pid,cid,url,text in cursor.fetchall()]
+    log.debug('%d emissions loaded'%(len(values)) )
+    return values
+
+class EmissionPOPO(Emission):
+  def __init__(self,pid=None,cid=None,url=None,text=None):
+    self.pid=pid
+    self.cid=cid
+    self.url=url
+    self.text=text
+    self.videos=dict()
+
+class EmissionBuilder:
+  def loadForCategorie(self,cat):
+    db=EmissionDatabase()
+    c=db.selectByParent(cat.getId())
+    rows=c.fetchall()
+    ems=[EmissionPOPO(pid,cid,url,text) for (pid,cid,url,text) in rows]
+    # go down the tree
+    vb=VideoBuilder()
+    for em in ems:
+      em.addVideos(vb.loadForEmission(em))
+    return ems
+  def loadDb(self):
+    edb=EmissionDatabase()
+    ems=edb.values()
+    # go down the tree
+    vb=VideoBuilder()
+    for em in ems:
+      em.addVideos(vb.loadForEmission(em))
+    return ems
 
 
 

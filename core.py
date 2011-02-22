@@ -17,12 +17,22 @@ SERVER='www.canalplus.fr'
 PORT=80
 METHOD='GET'
 
+class Stats:
+  NUMREQUEST=0
+  SAVEDQUERIES=0  
 
 def remove_html_tags(data):
     p = re.compile(r'<.*?>')
     return p.sub('', data)
 
 class Wtf(Exception):
+  def __init__(self,obj=None):
+    self.obj=obj
+  def __str__(self):
+    if self.obj is not None:
+      return '%s'%(self.obj.__dict__)
+    return '' 
+    
   pass
 
 class Fetcher():
@@ -34,6 +44,7 @@ class Fetcher():
           'User-Agent': 'Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.2.13) Gecko/20101206 Ubuntu/10.10 (maverick) Firefox/3.6.13', 
           'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7', 
       }
+  stats=Stats()
   params=dict()
   def __init__(self,method=METHOD,server=SERVER,port=PORT):
     # open connection
@@ -63,7 +74,8 @@ class Fetcher():
     headers=self.getHeaders()
     # make the request
     self.conn.request(self.METHOD,url,params,headers)
-    log.info('requested : %s'%(url))
+    self.stats.NUMREQUEST+=1
+    log.info('REQUEST %d/%d : requested : %s'%(self.stats.NUMREQUEST,self.stats.NUMREQUEST+self.stats.SAVEDQUERIES,url))
     return self.conn
 
   def handleResponse(self):
@@ -92,23 +104,33 @@ class Element():
     if el is None:
       return
     self.element=el
-    log.debug('Creating a %s'%self.__class__.__name__)
+    self.log.debug('Creating a %s'%self.__class__.__name__)
     res=self.element.xpath(self.aPath)
     if len(res) != 1:
-      log.debug('DOM error, falling back to xpath string(), no url ')
+      self.log.debug('DOM error, falling back to xpath string(), no url ')
     if len(res)==0:
       self.text=self.element.xpath('string()')
     else:
       self.a=res[0]
-      log.debug('A %s'%(tostring(self.a)))
+      self.log.debug('A %s'%(tostring(self.a)))
       self.text=self.a.text
-      log.debug('TEXT %s '%(self.text))
+      self.log.debug('TEXT %s '%(self.text))
       self.url=self.a.get('href')
-      log.debug('url %s '%(self.url))
+      self.log.debug('url %s '%(self.url))
     #if self.text is not None:
     #  #print self.text
     #  #self.text=self.text.decode(self.encoding)
     return    
+  
+  def writeToFile(self,dirname='./test'):
+    '''
+    save content to file <dirname>/<self.id>
+    '''
+    filename=os.path.sep.join([dirname,'%s-%d'%(self.__class__.__name__,self.getId()) ])
+    fout=file(filename,'w')
+    fout.write(self.data)
+    log.info('Written to file %s'%(filename))
+    return
 
 class Database:
   filename=None
@@ -153,18 +175,27 @@ class Database:
     
   def selectByID(self,elId):
     cursor=self.conn.cursor()
-    cursor.execute(self.__SELECT_ID%(self.table),(elId,))
+    log.debug( "%s - %s " % (self._SELECT_ID%(self.table),elId) )
+    cursor.execute(self._SELECT_ID%(self.table),(elId,))
     return cursor
   
   def selectByName(self,desc):
     cursor=self.conn.cursor()
-    cursor.execute(self.__SELECT_DESC%(self.table),(desc,))
+    log.debug( "%s - %s " % (self._SELECT_DESC%(self.table),desc))
+    cursor.execute(self._SELECT_DESC%(self.table),(desc,))
+    return cursor
+
+  def selectByParent(self,elId):
+    cursor=self.conn.cursor()
+    log.debug( "%s - %s " % (self._SELECT_PARENT_ID%(self.table),elId))
+    cursor.execute(self._SELECT_PARENT_ID%(self.table),(elId,))
     return cursor
  
   def insertmany(self, args):
     self.conn.execute('BEGIN TRANSACTION')
     try:
-      self.conn.executemany(self.__INSERT_ALL%self.table,args)
+      log.debug( "%s - %s " % (self._INSERT_ALL%self.table,args) )   
+      self.conn.executemany(self._INSERT_ALL%self.table,args)
       self.conn.commit()
     except Exception, e:
       self.conn.rollback()
@@ -174,21 +205,28 @@ class Database:
   def updatemany(self, args):
     self.conn.execute('BEGIN TRANSACTION')
     try:
-      self.conn.executemany(self.__INSERT_ALL%self.table,args)
+      log.debug( "%s - %s " % (self._UPDATE_ALL%self.table,args) )   
+      self.conn.executemany(self._UPDATE_ALL%self.table,args)
       self.conn.commit()
     except Exception, e:
       self.conn.rollback()
+      log.error('%s -> %s'%(self._UPDATE_ALL%self.table,args))
       raise e
     return
   
   def __setitem__(self,key,item):
     myID=int(key)
     #except ValueError,e:
-    if self[myID] is None:
-      self.insertMany([item])
+    if myID not in self:
+      self.insertmany([item])
     else:
-      self.updateMany([item])
+      self.updatemany([item])
     return
     
-  
+  def __contains__(self,item):
+    try:
+      self[item]
+      return True
+    except KeyError,e:
+      return False
   

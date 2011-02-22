@@ -7,21 +7,23 @@
 import logging
 
 from core import Database,Element,Fetcher
-
+from emission import EmissionBuilder
 
 log=logging.getLogger('categorie')
 
 
 
 class Categorie(Element):
+  log=log
   emissions=None
   #catPath='/html/body/div[2]/div[9]/div[3]/div/h3'
   aPath='./a[1]'
   cid=None
   tid=None
-  def __init__(self,el,emissions=None):
+  def __init__(self,el,tid,emissions=None):
     Element.__init__(self,el)
     self.emissions=dict()
+    self.tid=tid
     if emissions is not None and len(emissions) >0:
       self.addEmissions(emissions)
     return
@@ -31,9 +33,7 @@ class Categorie(Element):
       self.emissions[emm.text]=emm
       emm.setCategorie(self)
     return
-  def setTheme(self,theme):
-    self.tid=theme.tid
-    return
+
   def getId(self):
     if self.cid is None:
       db=CategorieDatabase()
@@ -41,7 +41,7 @@ class Categorie(Element):
       ret=c.fetchone()
       if ret is None:
         # no ref, add it to db.
-        db.insertMany([self])
+        db.insertmany([self])
         c=db.selectByName(self.text)
         ret=c.fetchone()
         if ret is None:
@@ -52,37 +52,44 @@ class Categorie(Element):
     #else
     return self.cid
   #
+  def save(self,update=False):
+    db=CategorieDatabase()
+    self.getId()
+    if self.cid is None:
+      raise Wtf()
+    # conditional saving
+    if update or self.getId() not in db:
+      log.info('Saving new Categorie %s'%self)
+      db[self.getId()]=self
+    return
+  #
   def __repr__(self):
-    return '<Categorie %s>'%(repr(self.text))  
+    return '<Categorie %s-%d: %s>'%(self.tid,self.getId(),repr(self.text))  
   
 
 class CategorieDatabase(Database):
-  table='categorie'
+  table='categories'
   # use ROWID
   schema="(desc VARCHAR(1000) UNIQUE,tid INT)"
-  __SELECT_ALL="SELECT rowid as cid, desc, tid from %s "
-  __SELECT_ID="SELECT rowid as cid, desc, tid from %s WHERE rowid=?"
-  __SELECT_TID="SELECT rowid as cid, desc, tid from %s WHERE tid=?"
-  __SELECT_TEXT="SELECT rowid as cid, desc, tid from %s WHERE desc LIKE ?"
-  __INSERT_ALL="INSERT IGNORE INTO %s (desc,tid) VALUES (?,?)"
+  _SELECT_ALL="SELECT rowid as cid, desc, tid from %s "
+  _SELECT_ID="SELECT rowid as cid, desc, tid from %s WHERE rowid=?"
+  _SELECT_PARENT_ID="SELECT rowid as cid, desc, tid from %s WHERE tid=?"
+  _SELECT_DESC="SELECT rowid as cid, desc, tid from %s WHERE desc LIKE ?"
+  _INSERT_ALL="INSERT INTO %s (desc,tid) VALUES (?,?)"
+  _UPDATE_ALL="UPDATE %s SET desc=?,tid=? where rowid=?"
   def __init__(self):
     Database.__init__(self,self.table)
     self.checkOrCreateTable()
     return
-            
-  def selectByTid(self,elId):
-    cursor=self.conn.cursor()
-    cursor.execute(self.__SELECT_TID%(self.table),(elId,))
-    return cursor
-
+  
   def insertmany(self, categories):
     args=[(cat.text,cat.tid,) for cat in categories]
-    Database.insertmany(args)
+    Database.insertmany(self,args)
     return
 
   def updatemany(self, categories):
-    args=[(cat.text,cat.tid,) for cat in categories]
-    Database.updatemany(args)
+    args=[(cat.text,cat.tid,cat.getId(),) for cat in categories]
+    Database.updatemany(self,args)
     return
     
   def __getitem__(self,key):
@@ -91,8 +98,8 @@ class CategorieDatabase(Database):
       c=self.selectByID(cid)
       ret=c.fetchone()
       if ret is None:
-        return None
-      cat=CategoryPOPO(ret)
+        raise KeyError()
+      cat=CategoriePOPO(ret)
       cat.cid,cat.text,cat.tid=ret
       return cat
     except ValueError,e:
@@ -102,19 +109,19 @@ class CategorieDatabase(Database):
       c=self.selectByName(key)
       ret=c.fetchone()
       if ret is None:
-        return None
-      cat=CategoryPOPO(ret)
+        raise KeyError()
+      cat=CategoriePOPO(ret)
       cat.cid,cat.text,cat.tid=ret
       return cat
     except ValueError,e:
       pass
-    return None
+    raise KeyError()
 
   def values(self):
     cursor=self.conn.cursor()
-    cursor.execute(self.__SELECT_ALL%(self.table))
+    cursor.execute(self._SELECT_ALL%(self.table))
     values=[CategoriePOPO(cid,text,tid) for cid,text,tid in cursor.fetchall()]
-    log.debug('%d themes loaded'%(len(values)) )
+    log.debug('%d categories loaded'%(len(values)) )
     return values
 
 class CategoriePOPO(Categorie):
@@ -125,16 +132,25 @@ class CategoriePOPO(Categorie):
     self.emissions=dict()
 
 class CategorieBuilder:
+  cache=None
+  def __init__(self):
+    self.cache=dict()
   def loadForTheme(self,theme):
     db=CategorieDatabase()
-    c=db.selectByTid(theme.getId())
-    cats=c.fetchall()
+    c=db.selectByParent(theme.getId())
+    rows=c.fetchall()
+    cats=[CategoriePOPO(cid,text,tid) for (cid,text,tid) in rows]
+    # go down the tree
+    eb=EmissionBuilder()
+    for cat in cats:
+      cat.addEmissions(eb.loadForCategorie(cat))
     return cats
   def loadDb(self):
     cdb=CategorieDatabase()
     cats=cdb.values()
+    # go down the tree
+    eb=EmissionBuilder()
     for cat in cats:
-      eb=EmissionBuilder()
       cat.addEmissions(eb.loadForCategorie(cat))
     return cats
 

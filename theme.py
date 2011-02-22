@@ -8,9 +8,10 @@
 import logging, re
 import lxml.html
 
-from core import Database,Element,Fetcher
+from core import Database,Element,Fetcher,Wtf
 from categorie import Categorie,CategorieBuilder
-from emission import Emission
+from emission import Emission,EmissionNotFetchable
+from video import VideoBuilder
 
 log=logging.getLogger('theme')
 
@@ -34,6 +35,7 @@ class Theme(Element):
   '''
     Emission are grouped into categories, which are part off one of the 6 main Themes.
   '''
+  log=log
   categories=None
   aPath='./h2[1]/a[1]'
   tidRE='.+pid(\d+).+'
@@ -67,31 +69,27 @@ class Theme(Element):
         log.warning('Erreur while parsing TID')
         return None
       self.tid=int(tids[0])
-    else:
-      # find it in DB ?
-      db=ThemeDatabase()
-      value=db[self.text]
-      if value is None:
-        self.tid=None
-      else:
-        self.tid=value.tid
     return self.tid
     
-  def save(self):
+  def save(self,update=False):
     db=ThemeDatabase()
     self.getId()
     if self.tid is None:
-      raise Wtf()
-    db[self.tid]=self
+      raise Wtf(self)
+    # conditional saving
+    if update or self.getId() not in db:
+      log.info('Saving new Theme %s'%self)
+      db[self.getId()]=self
     return
   #
   def __repr__(self):
-    return '<Theme %d: %s>'%(self.getId(), repr(self.text))  
+    return '<Theme %s: %s>'%(self.getId(), repr(self.text))  
 
 class Main:
   '''
     Emission are grouped into categories, which are part off one of the 6 main Themes.
   '''
+  log=log
   categories=None
   aPath='./h2[1]/a[1]'
   data=None
@@ -99,7 +97,7 @@ class Main:
   root=None
   #
   def parseContent(self,fetcher=MainFetcher()):
-    self.data=fetcher.fetch(self)
+    self.data=fetcher.fetch()
     self.makeAll()
     return
   #
@@ -129,7 +127,8 @@ class Main:
 
   def makeCategories(self,theme):
     catPath='./div/h3'
-    categories=[Categorie(cat) for cat in theme.element.xpath(catPath)]
+    categories=[Categorie(cat,theme.getId()) for cat in theme.element.xpath(catPath)]
+    log.debug('categories: %s'%(categories))
     theme.addCategories(categories)
     return categories
 
@@ -139,17 +138,30 @@ class Main:
     category.addEmissions(emissions)
     return emissions
 
+  def save(self,update=False):
+    for t in self.themes.values():
+      try:
+        t.save(update)
+      except Wtf,e:
+        log.error(e)
+        continue
+      for cat in t.categories.values():
+        cat.save(update)
+        for em in cat.emissions.values():
+          em.save(update)
+    return
+
 class ThemeDatabase(Database):
   '''
     Database access layer for Theme.
   '''
   table="themes"
   schema="(tid INT UNIQUE, url VARCHAR(1000) UNIQUE, desc VARCHAR(1000) UNIQUE)"
-  __SELECT_ALL="SELECT tid, url, desc from %s"
-  __SELECT_ID="SELECT tid, url, desc from %s WHERE tid=?"
-  __SELECT_DESC="SELECT tid, url, desc from %s WHERE desc LIKE ?"
-  __INSERT_ALL="INSERT INTO %s (tid, url, desc) VALUES (?,?,?)"
-  __UPDATE_ALL="UPDATE %s SET url=?, desc=? WHERE tid = ?"
+  _SELECT_ALL="SELECT tid, url, desc from %s"
+  _SELECT_ID="SELECT tid, url, desc from %s WHERE tid=?"
+  _SELECT_DESC="SELECT tid, url, desc from %s WHERE desc LIKE ?"
+  _INSERT_ALL="INSERT INTO %s (tid, url, desc) VALUES (?,?,?)"
+  _UPDATE_ALL="UPDATE %s SET url=?, desc=? WHERE tid = ?"
   def __init__(self):
     Database.__init__(self,self.table)
     self.checkOrCreateTable()
@@ -161,7 +173,7 @@ class ThemeDatabase(Database):
       c=self.selectByID(tid)
       ret=c.fetchone()
       if ret is None:
-        return None
+        raise KeyError()
       theme=ThemePOPO()
       theme.tid,theme.url,theme.text=ret
       return theme
@@ -172,17 +184,17 @@ class ThemeDatabase(Database):
       c=self.selectByName(key)
       ret=c.fetchone()
       if ret is None:
-        return None
+        raise KeyError()
       theme=ThemePOPO()
       theme.tid,theme.url,theme.text=ret
       return theme
     except ValueError,e:
       pass
-    return None
+    raise KeyError()
 
   def values(self):
     cursor=self.conn.cursor()
-    cursor.execute(self.__SELECT_ALL%(self.table))
+    cursor.execute(self._SELECT_ALL%(self.table))
     values=[ThemePOPO(tid,url,text) for tid,url,text in cursor.fetchall()]
     log.debug('%d themes loaded'%(len(values)) )
     return values
@@ -190,12 +202,12 @@ class ThemeDatabase(Database):
 
   def insertmany(self, themes):
     args=[(theme.tid,theme.url,theme.text,) for theme in themes]
-    Database.insertmany(args)
+    Database.insertmany(self,args)
     return
     
   def updatemany(self,themes):
     args=[(theme.url,theme.text,theme.tid,) for theme in themes]
-    Database.updatemany(args)
+    Database.updatemany(self,args)
     return
 
 
@@ -210,10 +222,9 @@ class ThemeBuilder:
   def loadDb(self):
     tdb=ThemeDatabase()
     themes=tdb.values()
+    cb=CategorieBuilder()
     for theme in themes:
-      cb=CategorieBuilder()
-      theme.addCategories(cb.loadForTheme(theme))
-      
+      theme.addCategories(cb.loadForTheme(theme))      
     return themes
 
 
