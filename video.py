@@ -5,9 +5,13 @@
 #
 
 import logging
-from core import Database,Element,Fetcher,Wtf
-from stream import Stream,StreamBuilder,StreamDatabase
+from core import Base,Database,Element,Fetcher,Wtf,parseElement
+
 import lxml.etree
+
+from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import relationship
+
 
 log=logging.getLogger('video')
 
@@ -47,30 +51,30 @@ class VideoFetcher(Fetcher):
     return data
 
 
-class Video(Element):
+class Video(Base):
   '''
     Une video est determinee par une url REST self.srcUrl + self.vid
   '''
-  log=log
+  __tablename__="videos"
+  vid=Column(Integer,primary_key=True)
+  pid=Column(Integer,ForeignKey('emissions.pid'))
+  text=Column("desc",String(1000))
+  url=Column(String(1000))
+  #self.srcUrl%(self.vid)
+  streams=relationship("Stream",backref='video')
+
+  __table_args__= (UniqueConstraint(url, 'url'), UniqueConstraint(text, 'desc') ,{}) 
+
+  parsed=False
   srcUrl='http://service.canal-plus.com/video/rest/getVideosLiees/cplus/%d'
-  #programme ID
-  pid=None
-  vid=None
+
   # Xpath values
   videosPath='/VIDEOS/VIDEO'
   streamPath='./MEDIA/VIDEOS/*'
   idPath='./ID'
   infoTitrePath='./INFOS/TITRAGE/TITRE'
   infoSousTitrePath='./INFOS/TITRAGE/SOUS_TITRE'
-  # ./TITRE + ./SOUS_TITRE
-  def __init__(self,vid,pid,text):
-    self.pid=int(pid)
-    self.vid=int(vid)
-    self.text=text
-    self.url=self.srcUrl%(self.vid)
-    self.parsed=False
-    self.streams=dict()
-    return
+
   def getUrl(self):
     return self.url
   #
@@ -160,117 +164,8 @@ class Video(Element):
       videosCache[vid].update( clean(desc,self.infoTitrePath), clean(desc,self.infoSousTitrePath))
     return
   #
-  def save(self,update=False):
-    db=VideoDatabase()
-    # conditional saving
-    if update or self.getId() not in db: #1
-      log.debug('saving %s'%(self))
-      db[self.getId()]=self
-      return 1
-    return 0
-
-  #
   def __repr__(self):
     return "<Video %d-%d: %s>"%(self.pid, self.vid,repr(self.text))
 
-
-
-
-
-    
-
-class VideoDatabase(Database):
-  table="videos"
-  schema="(vid INT, pid INT, desc VARCHAR(1000))"
-  _SELECT_ALL="SELECT vid, pid, desc FROM %s "
-  _SELECT_ID="SELECT vid, pid, desc FROM %s WHERE vid=?"
-  _SELECT_PARENT_ID="SELECT vid, pid, desc FROM %s WHERE pid=?"
-  _INSERT_ALL="INSERT INTO %s (vid, pid, desc) VALUES (?,?,?)"
-  _UPDATE_ALL="UPDATE %s SET pid=?,desc=? WHERE vid=?"
-  def __init__(self):
-    Database.__init__(self,self.table)
-    self.checkOrCreateTable()
-    return
-
-  def __getitem__(self,key):
-    try:
-      pid=int(key)
-      c=self.selectByID(pid)
-      ret=c.fetchone()
-      if ret is None:
-        raise KeyError()
-      vid,pid,text=ret
-      v=Video(vid,pid,text)
-      return v
-    except ValueError,e:
-      pass
-    # not an int, let's try by name
-    try:
-      c=self.selectByName(key)
-      ret=c.fetchone()
-      if ret is None:
-        raise KeyError()
-      vid,pid,text=ret
-      v=Video(vid,pid,text)
-      return v
-    except ValueError,e:
-      pass
-    raise KeyError()
-            
-  def insertmany(self, videos):
-    args=[(video.getId(),video.pid,video.text) for video in videos]
-    Database.insertmany(self,args)
-    return
-        
-  def updatemany(self, videos):
-    args=[(video.pid,video.text, video.getId(),) for video in videos]
-    Database.updatemany(self,args)
-    return
-
-  def values(self):
-    cursor=self.conn.cursor()
-    cursor.execute(self._SELECT_ALL%(self.table))
-    values=[Video(vid,pid,text) for vid,pid,text in cursor.fetchall()]
-    log.debug('%d videos loaded'%(len(values)) )
-    return values
-
-class VideoBuilder:
-  def loadForEmission(self,em):
-    db=VideoDatabase()
-    c=db.selectByParent(em.getId())
-    rows=c.fetchall()
-    vids=[Video(vid,pid,text) for (vid,pid,text) in rows]
-    # go down the tree
-    sb=StreamBuilder()
-    for vid in vids:
-      vid.addStreams(sb.loadForVideo(vid))
-    return vids
-  def loadDb(self):
-    db=VideoDatabase()
-    vids=db.values()
-    # go down the tree
-    sb=StreamBuilder()
-    for vid in vids:
-      vid.addStreams(sb.loadForVideo(vid))
-    return vids
-  # load Videos with Streams
-  def loadVideosWithStreams(self):
-    log.error('*** YOU DATABASE TRASH BASTARD ***')
-    db=StreamDatabase()
-    streams=db.values()
-    keys=set(db.getUniqueParentId())
-    # go UP the tree
-    vdb=VideoDatabase()
-    videos=dict()
-    # let's be nice
-    for key in keys:
-      try:
-        videos[key]=vdb[key]
-      except KeyError,e:
-        pass
-    sbuilder=StreamBuilder()
-    for video in videos.values():
-      video.addStreams(sbuilder.loadForVideo(video))
-    return videos
 
 

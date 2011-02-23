@@ -5,20 +5,33 @@
 #
 
 import logging,os,urlparse
-from core import Database,Element,Fetcher,Wtf
+from core import Base,Database,Element,Fetcher,Wtf
+
+from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, UniqueConstraint
 
 import lxml.etree
 
 log=logging.getLogger('stream')
 
 
-class Stream:
+class Stream(Base):
+  __tablename__="streams"
+
+  id=Column(Integer,primary_key=True)
+  vid=Column(Integer,ForeignKey('videos.vid'))
+  quality=Column(String(50))
+  #url=Column(String(1000), UniqueConstraint('urlu'))
+  url=Column(String(1000))
+
+  __table_args__  = (UniqueConstraint(url, 'url'), {}) 
+
   def __init__(self,vid,quality,url):
     self.vid=vid
     self.quality=quality
     self.url=urlparse.urlparse(url).geturl()
     if self.url is None:
       raise Wtf()
+  
   #
   def fetchStream(self):
     ''' on recupere le stream avec un outils externe ( rtmpdump )
@@ -57,65 +70,4 @@ class Stream:
     up=max(0,len(self.url)-20)    
     return "<Stream %s %s[..]%s >"%(self.quality,self.url[:low],self.url[up:])
 
-
-class StreamDatabase(Database):
-  table="streams"
-  schema="(vid INT, quality VARCHAR(50), url VARCHAR(1000) UNIQUE)"
-  _SELECT_ALL="SELECT vid, quality, url FROM %s "
-  _SELECT_PARENT_ID="SELECT vid, quality, url FROM %s WHERE vid=?"
-  _SELECT_UNIQUE_PARENT_ID="SELECT DISTINCT vid FROM %s"
-  _INSERT_ALL="INSERT INTO %s (vid, quality, url) VALUES (?,?,?)"
-  _UPDATE_ALL="UPDATE %s SET url=? WHERE vid=? AND quality=?"
-  def __init__(self):
-    Database.__init__(self,self.table)
-    self.checkOrCreateTable()
-    return
-
-  def __getitem__(self,key):
-    try:
-      vid=int(key)
-    except ValueError,e:
-      raise KeyError()
-    c=self.selectByParent(vid)
-    ret=c.fetchall()
-    if len(ret) ==0 :
-      raise KeyError()
-    streams=[Stream(vid,quality,url) for (vid,quality,url) in ret]
-    return streams
-            
-  def insertmany(self, streams):
-    args=[(s.vid,s.quality,s.url) for s in streams]
-    Database.insertmany(self,args)
-    return
-        
-  def updatemany(self, videos):
-    args=[(s.url,s.vid,s.quality) for s in streams]
-    Database.updatemany(self,args)
-    return
-
-  def values(self):
-    cursor=self.conn.cursor()
-    cursor.execute(self._SELECT_ALL%(self.table))
-    values=[Stream(vid,quality,url) for vid,quality,url in cursor.fetchall()]
-    log.debug('%d streams loaded'%(len(values)) )
-    return values
-
-  def getUniqueParentId(self):
-    cursor=self.conn.cursor()
-    cursor.execute(self._SELECT_UNIQUE_PARENT_ID%(self.table))
-    values=[vid for vid, in cursor.fetchall()]
-    return values
-
-class StreamBuilder:
-  def loadForVideo(self,vid):
-    db=StreamDatabase()
-    try:
-      streams=db[vid.getId()]
-      return streams
-    except KeyError,e:
-      return []
-  def loadDb(self):
-    db=VideoDatabase()
-    streams=db.values()
-    return streams
 

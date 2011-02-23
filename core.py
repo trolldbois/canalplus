@@ -5,6 +5,8 @@
 #
 
 
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine
 
 import httplib, logging, os, re, sqlite3
 import StringIO, gzip
@@ -16,6 +18,9 @@ log=logging.getLogger('core')
 SERVER='www.canalplus.fr'
 PORT=80
 METHOD='GET'
+
+
+
 
 class Stats:
   NUMREQUEST=0
@@ -93,35 +98,37 @@ class Fetcher():
       return data
 
 
+def parseElement(obj,el):
+  if el is None:
+    return
+  obj.element=el
+  obj.log.debug('Creating a %s'%obj.__class__.__name__)
+  res=obj.element.xpath(obj.aPath)
+  if len(res) != 1:
+    obj.log.debug('DOM error, falling back to xpath string(), no url ')
+  if len(res)==0:
+    obj.text=obj.element.xpath('string()')
+  else:
+    obj.a=res[0]
+    obj.log.debug('A %s'%(tostring(obj.a)))
+    obj.text=obj.a.text
+    obj.log.debug('TEXT %s '%(obj.text))
+    obj.url=obj.a.get('href')
+    obj.log.debug('url %s '%(obj.url))
+  #if obj.text is not None:
+  #  #print obj.text
+  #  #obj.text=obj.text.decode(obj.encoding)
+  return    
 
-class Element():
+
+class Element(object):
   encoding='utf-8'
   element=None
   a=None
   text=None
   url=None
-  def __init__(self,el):
-    if el is None:
-      return
-    self.element=el
-    self.log.debug('Creating a %s'%self.__class__.__name__)
-    res=self.element.xpath(self.aPath)
-    if len(res) != 1:
-      self.log.debug('DOM error, falling back to xpath string(), no url ')
-    if len(res)==0:
-      self.text=self.element.xpath('string()')
-    else:
-      self.a=res[0]
-      self.log.debug('A %s'%(tostring(self.a)))
-      self.text=self.a.text
-      self.log.debug('TEXT %s '%(self.text))
-      self.url=self.a.get('href')
-      self.log.debug('url %s '%(self.url))
-    #if self.text is not None:
-    #  #print self.text
-    #  #self.text=self.text.decode(self.encoding)
-    return    
-  
+  #def __init__(self):
+  #  self.log=logging.getLogger(__class__.__name__)
   def writeToFile(self,dirname='./test'):
     '''
     save content to file <dirname>/<self.id>
@@ -137,6 +144,7 @@ class Database:
   table=None
   conn=None
   def __init__(self,table,filename='canalplus.db'):
+    self.engine = create_engine('sqlite://./'+filename, echo=True)
     self.filename=filename
     self.table=table
     self.conn=sqlite3.connect(self.filename)
@@ -229,4 +237,12 @@ class Database:
       return True
     except KeyError,e:
       return False
-  
+
+
+
+
+
+#Base=declarative_base(cls=Element)
+Base=declarative_base()
+
+
