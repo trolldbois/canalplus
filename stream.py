@@ -17,9 +17,9 @@ log=logging.getLogger('stream')
 class Stream(Base):
   __tablename__="streams"
 
-  id=Column(Integer,primary_key=True)
-  vid=Column(Integer,ForeignKey('videos.vid'))
-  quality=Column(String(50))
+  #id=Column(Integer,primary_key=True)
+  vid=Column(Integer,ForeignKey('videos.vid'),primary_key=True)
+  quality=Column(String(50),primary_key=True)
   #url=Column(String(1000), UniqueConstraint('urlu'))
   url=Column(String(1000))
 
@@ -44,25 +44,6 @@ class Stream(Base):
   def makeFilename(self):
     self.filename=os.path.sep.join(['./output',os.path.basename(self.url)])
     return self.filename
-  def save(self,update=False):
-    db=StreamDatabase()
-    # conditional saving
-    if self.vid not in db: # 1
-      # no stream for this video
-      log.debug('saving %s'%self)
-      db.insertmany([self])
-      return 1
-    for s in db[self.vid]:
-      if s.quality.lower() == self.quality.lower():
-        if update:
-          log.debug('updating %s'%self)
-          db.updatemany([self])
-          return 1
-        return 0
-    #else, nth stream for video
-    log.debug('saving %s'%self)
-    db.insertmany([self])
-    return 1
     
   
   def __repr__(self):

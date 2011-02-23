@@ -19,7 +19,7 @@ from stream import Stream
 
 log=logging.getLogger('test')
 
-engine = create_engine('sqlite:///canalplus.db',echo=False)
+engine = create_engine('sqlite:///canalplus.db',echo=True)
 Session = scoped_session(sessionmaker(autocommit=False,
                                       autoflush=False,
                                       bind=engine))
@@ -37,9 +37,6 @@ def testModel():
   print ''
   
 def testStream():
-  #425846|BAS_DEBIT|rtmp://vod-fms.canalplus.fr/ondemand/videos/1102/LES_GUIGNOLS_QUOTIDIEN_110216_AUTO_10737_169_video_L.flv
-  s=Stream(425846,'BAS_DEBIT','rtmp://vod-fms.canalplus.fr/ondemand/videos/1102/LES_GUIGNOLS_QUOTIDIEN_110216_AUTO_10737_169_video_L.flv')
-  print s
   #read
   session=Session()
   for stream in session.query(Stream).limit(1):
@@ -70,7 +67,33 @@ def testTheme():
   print theme.categories
 
 def test():
-  testModel()
+  #testModel()
+  testLoad()
+
+def testLoad():
+  testReadStream()
+  print ''
+  testReadVideo()
+  
+def testReadStream():
+  #425846|BAS_DEBIT|rtmp://vod-fms.canalplus.fr/ondemand/videos/1102/LES_GUIGNOLS_QUOTIDIEN_110216_AUTO_10737_169_video_L.flv
+  s=Stream(425846,'BAS_DEBIT','rtmp://vod-fms.canalplus.fr/ondemand/videos/1102/LES_GUIGNOLS_QUOTIDIEN_110216_AUTO_10737_169_video_L.flv')
+  print s
+  print s.vid
+  session=Session()
+  #print  session.query(Stream).filter(Stream.vid == s.vid).first()
+  print session.merge(s)
+
+def testReadVideo():
+  #421738|3299||Album de la semaine
+  v=Video(421738,3299,'Album de la semaine')
+  v2=Video(421738098875,3298969,'Album de la semaine')
+  print v
+  print v.vid
+  session=Session()
+  #print  session.query(Stream).filter(Stream.vid == s.vid).first()
+  print session.merge(v)
+  print session.merge(v2)
 
 
 test()

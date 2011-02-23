@@ -51,7 +51,9 @@ class Fetcher():
       }
   stats=Stats()
   params=dict()
-  def __init__(self,method=METHOD,server=SERVER,port=PORT):
+  def __init__(self,session,method=METHOD,server=SERVER,port=PORT):
+    #save SQL ORM
+    self.session=session
     # open connection
     self.METHOD=method
     self.SERVER=server
@@ -96,6 +98,16 @@ class Fetcher():
       if resp.getheader('content-encoding') == 'gzip':
         data=self.uncompress(data)
       return data
+
+  def writeToFile(self,data,obj,dirname='./test'):
+    '''
+    save content to file <dirname>/<self.id>
+    '''
+    filename=os.path.sep.join([dirname,'%s-%d'%(obj.__class__.__name__,obj.getId()) ])
+    fout=file(filename,'w')
+    fout.write(data)
+    log.info('Written to file %s'%(filename))
+    return
 
 
 def parseElement(obj,el):

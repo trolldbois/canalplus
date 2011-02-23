@@ -30,8 +30,13 @@ class EmissionFetcher(Fetcher):
   '''
   Http fetcher for an emission.
   '''
-  def __init__(self):
-    Fetcher.__init__(self)
+  aPath='.'
+  pidRE='.+pid(\d+).+'
+  # the regexp to get an Video Id from a url
+  vidRE='.vid=(\d+)'
+  def __init__(self,session):
+    Fetcher.__init__(self,session)
+    return
 
   def fetch(self,emission):
     '''
@@ -46,6 +51,31 @@ class EmissionFetcher(Fetcher):
       raise EmissionNotFetchable(emission)
     return data
 
+  def parseContent(self,emission):
+    ''' Read the data to get the videos VID
+    '''
+    data=self.fetch(emission)
+    self.getVideos(data)
+    return
+    
+  def getVideos(self,data,emission):
+    '''
+      An Emission's videos are identified bt their VID in the url
+    '''
+    videos=dict()
+    try:
+      root=lxml.html.fromstring(data)
+      contenu=root.xpath('id("contenuOnglet")')[0]
+      vidz=contenu.xpath('.//h4')
+      for videoLink in vidz:
+        title=videoLink.xpath('string()').strip()
+        vid=re.findall(self.vidRE,videoLink.xpath('./a')[0].get('href'))[0]
+        videos[vid]=Video(vid,emission.getId(),title)
+    except Exception,e:
+      log.error("%s %s"%(e, emission) )
+      self.writeToFile(data,emission)
+      raise EmissionNotFetchable(emission)
+    return videos
 
 class Emission(Base):
   '''
@@ -70,6 +100,13 @@ class Emission(Base):
   pidRE='.+pid(\d+).+'
   # the regexp to get an Video Id from a url
   vidRE='.vid=(\d+)'
+
+  def __init__(self,pid=None,cid=None,url=None,text=None):
+    self.pid=pid
+    self.cid=cid
+    self.url=url
+    self.text=text
+    return
 
   def addVideos(self,vids):
     adds=[vid for vid in vids if vid.getId() not in self.videos]
@@ -97,32 +134,6 @@ class Emission(Base):
     return self.pid
 
 
-  def parseContent(self,fetcherEngine=EmissionFetcher()):
-    ''' Read the data to get the videos VID
-    '''
-    fetcher=fetcherEngine
-    self.data=fetcher.fetch(self)
-    self.getVideos()
-    return
-    
-  def getVideos(self):
-    '''
-      An Emission's videos are identified bt their VID in the url
-    '''
-    self.videos=dict()
-    try:
-      root=lxml.html.fromstring(self.data)
-      contenu=root.xpath('id("contenuOnglet")')[0]
-      vidz=contenu.xpath('.//h4')
-      for videoLink in vidz:
-        title=videoLink.xpath('string()').strip()
-        vid=re.findall(self.vidRE,videoLink.xpath('./a')[0].get('href'))[0]
-        self.videos[vid]=Video(vid,self.getId(),title)
-    except Exception,e:
-      log.error("%s %s"%(e, self) )
-      self.writeToFile()
-      raise EmissionNotFetchable(self)
-    return self.videos
 
   def updateTs(self):
     db=EmissionDatabase()

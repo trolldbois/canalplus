@@ -21,7 +21,7 @@ class Categorie(Base):
   
   cid=Column('rowid',Integer, primary_key=True)
   tid=Column(Integer, ForeignKey('themes.tid'))
-  text=Column('desc',String(1000))
+  text=Column('desc',String(1000),primary_key=True)
   emissions=relationship("Emission",backref='categorie')
   
   __table_args__= (UniqueConstraint(text, 'desc') ,{}) 
@@ -29,6 +29,12 @@ class Categorie(Base):
   log=log
   #catPath='/html/body/div[2]/div[9]/div[3]/div/h3'
   aPath='./a[1]'
+
+  def __init__(self,cid=None,text=None,tid=None):
+    self.cid=cid
+    self.text=text
+    self.tid=tid
+    return
 
   def getId(self):
     if self.cid is None:

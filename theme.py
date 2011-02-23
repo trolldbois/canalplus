@@ -31,6 +31,11 @@ class Theme(Base):
   categories = relationship("Categorie", backref="theme")
 
   __table_args__= (UniqueConstraint(url, 'url'), UniqueConstraint(text, 'desc') ,{}) 
+
+  def __init__(self,tid=None,url=None,text=None):
+    self.tid=tid
+    self.url=url
+    self.text=text
   
   log=log
   aPath='./h2[1]/a[1]'

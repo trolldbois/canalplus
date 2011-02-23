@@ -7,12 +7,25 @@
 
 import codecs,logging,os,random
 
+from main import Main
 from core import Stats
+
+from theme import Theme
+from categorie import Categorie
 from emission import Emission
-from video import Video
-from theme import Main
+from video import Video,VideoFetcher
+from stream import Stream
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import scoped_session,sessionmaker
 
 log=logging.getLogger('test')
+
+engine = create_engine('sqlite:///canalplus.db',echo=False)
+Session = scoped_session(sessionmaker(autocommit=False,
+                                      autoflush=False,
+                                      bind=engine))
+
 
 
 class FileFetcher:
@@ -107,20 +120,30 @@ def testEmission(filename=None):
 def testVideoXml():
   logging.basicConfig(level=logging.DEBUG)
   cache=dict()
+  session=Session()
+  
+  v=Video(421738,3299,'Album de la semaine')
+  print v
   video=Video(419796,1784,'LES GUIGNOLS')
+  print video
+  
   filefetcher=FileFetcher('test/419796')
-  video.parseContent(cache,filefetcher)
+  videofetcher=VideoFetcher(session)
+  data=videofetcher.fetch=filefetcher.fetch
+  videofetcher.parseContent(video,cache)
 
   for vfk,vf in cache.items():
     print vfk,vf
   #
-  for s in cache[video.vid].streams.values():
+  for s in cache[video.vid].streams:
     print s
   
+  print ''
+  session.commit()
 
 
 #testVideoXml()
-#testEmission('test/EmissionPOPO-3442')
+testEmission('test/EmissionPOPO-3442')
 #testGuignols()
 
 

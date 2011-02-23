@@ -6,6 +6,7 @@
 
 import logging
 from core import Base,Database,Element,Fetcher,Wtf,parseElement
+from stream import Stream
 
 import lxml.etree
 
@@ -37,8 +38,15 @@ class VideoFetcher(Fetcher):
   '''
     Agent de recuperation de l'url REST contenant les infos pour cette videos ( ou plusieurs)
   '''
-  def __init__(self):
-    Fetcher.__init__(self)
+  # Xpath values
+  videosPath='/VIDEOS/VIDEO'
+  streamPath='./MEDIA/VIDEOS/*'
+  idPath='./ID'
+  infoTitrePath='./INFOS/TITRAGE/TITRE'
+  infoSousTitrePath='./INFOS/TITRAGE/SOUS_TITRE'
+
+  def __init__(self,session):
+    Fetcher.__init__(self,session)
     return
 
   def fetch(self,video):
@@ -49,6 +57,55 @@ class VideoFetcher(Fetcher):
     Fetcher.request(self,video.getUrl())
     data=self.handleResponse()
     return data
+  #
+  def parseContent(self,video,videosCache):
+    ''' 
+    We return a dictionnary of several Videos referenced in the XML file
+    '''
+    if video.getId() not in videosCache:
+      log.debug('fetching')
+      # first time, we nee to get the XML and parse IT
+      data=self.fetch(video)
+      log.debug('parsing')
+      self.parseXml(data,video,videosCache)
+    else:
+      # we are already parsed
+      log.debug('saved one HTTP query for %s'%(video) )
+      fetcher.stats.SAVEDQUERIES+=1
+      pass
+    return
+  #
+  def parseXml(self,data,video,videosCache):
+    videos=[]
+    # on recupere plusieurs videos en realite ...
+    root=lxml.etree.fromstring(data)
+    elements=root.xpath(self.videosPath)
+    # we parse each child to get a new Video with the 3 Streams
+    log.info('parsing Video XML chunk for %d Videos'%( len(elements)) )
+    for desc in elements:
+      vid=int(desc.xpath(self.idPath)[0].text)
+      # check for error, vide videoId == -1
+      if vid == -1:
+        self.writeToFile(data,video)
+        ## and save a DEADLINK Stream to keep it out from future round
+        video.url='DEADLINK'
+        raise VideoNotFetchable(video)
+      log.debug('parsing XML chunk for  %s'%(vid) )
+      # if video is already known, continue
+      if (vid in videosCache ) and (videosCache[vid].isParsed()) :
+        continue
+      elif vid not in videosCache:
+        # Create Video before updating it in cache
+        text='%s - %s'%(clean(desc,self.infoTitrePath), clean(desc,self.infoSousTitrePath))
+        videosCache[vid]=Video(vid,video.pid,text)
+        log.debug('%s added to cache'%(vid) )
+        streamsEl=desc.xpath(self.streamPath)
+        streams=[self.session.merge(Stream(vid,s.tag,s.text)) for s in streamsEl if s.text is not None]
+        self.session.merge(videosCache[vid])
+        log.debug('%d streams created '%( len(streams)) )
+      # Videos is NOT parsed , update each video with new infos
+      videosCache[vid].update( clean(desc,self.infoTitrePath), clean(desc,self.infoSousTitrePath))
+    return
 
 
 class Video(Base):
@@ -75,6 +132,14 @@ class Video(Base):
   infoTitrePath='./INFOS/TITRAGE/TITRE'
   infoSousTitrePath='./INFOS/TITRAGE/SOUS_TITRE'
 
+  def __init__(self,vid,pid,text):
+    self.pid=int(pid)
+    self.vid=int(vid)
+    self.text=text
+    self.url=self.srcUrl%(self.vid)
+    self.parsed=False
+    return
+
   def getUrl(self):
     return self.url
   #
@@ -93,16 +158,6 @@ class Video(Base):
     ''' gets a video ID    '''
     return self.vid
     
-  def setEmission(self,em):
-    self.pid=em.getId()
-    self.emission=em
-    return
-
-  def addStreams(self,streams):
-    log.debug('Adding streams for %s'%self)    
-    for s in streams:
-      self.streams[s.quality]=s
-    return
   #  
   def bestStream(self):
     if len(self.streams) == 0:
@@ -112,57 +167,6 @@ class Video(Base):
         if qual in self.streams:
           return self.streams[qual]
       return self.streams[0]
-  #
-  def parseContent(self,videosCache,fetcher=VideoFetcher()):
-    ''' 
-    We return a dictionnary of several Videos referenced in the XML file
-    '''
-    if self.getId() not in videosCache:
-      log.debug('fetching')
-      # first time, we nee to get the XML and parse IT
-      self.data=fetcher.fetch(self)
-      log.debug('parsing')
-      self.parseXml(videosCache)
-    else:
-      # we are already parsed
-      log.debug('saved one HTTP query for %s'%(self) )
-      fetcher.stats.SAVEDQUERIES+=1
-      pass
-    return
-    
-  def parseXml(self,videosCache):
-    videos=[]
-    # on recupere plusieurs videos en realite ...
-    root=lxml.etree.fromstring(self.data)
-    elements=root.xpath(self.videosPath)
-    # we parse each child to get a new Video with the 3 Streams
-    log.info('parsing Video XML chunk for %d Videos'%( len(elements)) )
-    for desc in elements:
-      vid=int(desc.xpath(self.idPath)[0].text)
-      # check for error, vide videoId == -1
-      if vid == -1:
-        self.writeToFile()
-        ## and save a DEADLINK Stream to keep it out from future round
-        v=Video(self.vid,self.pid,'DEADLINK')
-        s=Stream(self.vid,'DEADLINK','')
-        v.addStreams([s])
-        raise VideoNotFetchable(v)
-      log.debug('parsing XML chunk for  %s'%(vid) )
-      # if video is already known, continue
-      if (vid in videosCache ) and (videosCache[vid].isParsed()) :
-        continue
-      elif vid not in videosCache:
-        # Create Video before updating it in cache
-        text='%s - %s'%(clean(desc,self.infoTitrePath), clean(desc,self.infoSousTitrePath))
-        videosCache[vid]=Video(vid,self.pid,text)
-        log.debug('%s added to cache'%(vid) )
-        streamsEl=desc.xpath(self.streamPath)
-        streams=[Stream(vid,s.tag,s.text) for s in streamsEl if s.text is not None]
-        log.debug('%d streams created '%( len(streams)) )
-        videosCache[vid].addStreams(streams)
-      # Videos is NOT parsed , update each video with new infos
-      videosCache[vid].update( clean(desc,self.infoTitrePath), clean(desc,self.infoSousTitrePath))
-    return
   #
   def __repr__(self):
     return "<Video %d-%d: %s>"%(self.pid, self.vid,repr(self.text))
