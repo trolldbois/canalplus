@@ -101,7 +101,7 @@ class Update:
       try:
         # step 1
         log.debug('************* XML-todo %s'%(video))
-        if videos in parsed:
+        if video in parsed:
           log.debug('Video stream XML already parsed %s'%(video))
           continue
         # fetch XML file
@@ -114,11 +114,9 @@ class Update:
         #self.session.add_all(newstreams)
         newvideos=set([self.session.merge(myVid) for myVid in newvideos])
         newstreams=set([self.session.merge(myStream) for myStream in newstreams])
-        log.warning('%s'%(newstreams))
         cntStream+=len(newstreams)
         # cache parsed videos for step 1
         parsed.update(newvideos)
-        log.debug('************* XML-parsed %s'%(parsed))
       except VideoNotFetchable,v:
         streamParser.writeToFile(data,video,video.vid)
         continue
