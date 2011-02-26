@@ -16,17 +16,7 @@ from model import Theme,Categorie,Emission,Video,Stream
 
 log=logging.getLogger('theme')
 
-
-
-class Wtf(Exception):
-  def __init__(self,obj=None):
-    self.obj=obj
-  def __str__(self):
-    if self.obj is not None:
-      return '%s'%(self.obj.__dict__)
-    return '' 
-
-
+  
 class MainFetcher(Fetcher):
   ROOTURL='/'
   def __init__(self,session):
@@ -39,6 +29,35 @@ class MainFetcher(Fetcher):
     Fetcher.request(self,self.ROOTURL)
     data=self.handleResponse()
     return data    
+
+class EmissionFetcher(Fetcher):
+  '''
+  Http fetcher for an emission.
+  '''
+  def fetch(self,emission):
+    '''
+      Loads a Emission Html page content from network.
+    '''
+    # make the request
+    log.debug('requesting %s'%(emission.url))
+    Fetcher.request(self,emission.url)
+    data=self.handleResponse()
+    if(data is None):
+      raise EmissionNotFetchable(emission)
+    return data
+
+
+class VideoFetcher(Fetcher):
+  def fetch(self,video):
+    '''  On recupere le contenu par le reseau
+    '''
+    # make the request
+    log.debug('requesting %s'%(video.url))
+    Fetcher.request(self,video.url)
+    data=self.handleResponse()
+    if(data is None):
+      raise VideoNotFetchable(video)
+    return data
 
 
 class NullSession:

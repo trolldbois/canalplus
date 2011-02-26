@@ -5,10 +5,10 @@
 #
 
 
+from exception import Wtf,VideoNotFetchable,EmissionNotFetchable
 import codecs,logging,os,random
 
-from main import Main
-from emission import EmissionFetcher
+from main import Main,EmissionFetcher,VideoFetcher
 from core import EmissionParser,VideoParser,StreamParser
 from model import Theme,Categorie,Emission,Video,Stream
 
