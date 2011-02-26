@@ -29,7 +29,7 @@ def showTree():
   logging.basicConfig(filename='show.log',level=logging.DEBUG)
   main=Main()
   main.parseContent()
-  printTree(main.themes.values())
+  printTree(main.themes)
 
 
 def printTree(themes):
@@ -53,7 +53,7 @@ def testTheme(filename='test/index.html'):
   main.parseContent(filefetcher)
   print main.themes
   if True:
-    printTree(main.themes.values())    
+    printTree(main.themes)    
   return
 
 

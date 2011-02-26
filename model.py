@@ -5,7 +5,7 @@
 #
 
 import logging,os,urlparse,re
-from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, UniqueConstraint, DateTime
+from sqlalchemy import Table, Column, Integer, String, Sequence, MetaData, ForeignKey, UniqueConstraint, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 #local exception
@@ -34,6 +34,16 @@ class Theme(Base):
     self.url=url
     self.text=text
     return
+  def __eq__(self,other):
+    if other is None or not hasattr(other,'tid'):
+      return False
+    if self.tid == other.tid:
+      return True
+    return False
+  def __ne__(self,other):
+    return not self.__eq__(other)
+  def __hash__(self):
+    return hash(self.tid)
   def __repr__(self):
     return '<Theme %s: %s>'%(self.tid, repr(self.text))  
 
@@ -42,22 +52,39 @@ class Categorie(Base):
   '''
     Categorie regroups several emissions.
     Themes - > Categories -> Emissions
+
+    CREATE TABLE categories (
+            tid INTEGER, 
+            "desc" VARCHAR(1000) NOT NULL, 
+            PRIMARY KEY ("desc"), 
+            UNIQUE ("desc"), 
+            FOREIGN KEY(tid) REFERENCES themes (tid)
+    );
+
   '''
   __tablename__="categories"
-  
-  cid=Column('rowid',Integer, primary_key=True)
+  #fake column
   tid=Column(Integer, ForeignKey('themes.tid'))
   text=Column('desc',String(1000),primary_key=True)
   emissions=relationship("Emission",backref='categorie')
   
-  __table_args__= (UniqueConstraint(text, 'desc') ,{}) 
-  def __init__(self,cid=None,text=None,tid=None):
-    self.cid=cid
+  __table_args__= (UniqueConstraint(text, 'desc'),  {}) 
+  def __init__(self,text=None,tid=None):
     self.text=text
     self.tid=tid
     return
+  def __eq__(self,other):
+    if other is None or not hasattr(other,'text'):
+      return False
+    if self.text == other.text:
+      return True
+    return False
+  def __ne__(self,other):
+    return not self.__eq__(other)
+  def __hash__(self):
+    return hash(self.text)
   def __repr__(self):
-    return '<Categorie %s-%s: %s>'%(self.tid,self.cid,repr(self.text))  
+    return '<Categorie %s: %s>'%(self.tid,repr(self.text))  
   
 
 class Emission(Base):
@@ -67,21 +94,33 @@ class Emission(Base):
   '''
   __tablename__="emissions"
 
-  pid=Column(Integer,primary_key=True)
-  cid=Column(Integer, ForeignKey('categories.rowid'))
+  pid=Column(Integer, primary_key=True)
+  cid=Column(String(1000), ForeignKey('categories.desc'))
   text=Column('desc',String(1000))
   url=Column(String(1000))
   ts=Column(DateTime)
   videos=relationship("Video",backref='emission')
 
-  __table_args__= (UniqueConstraint(url, 'url'), UniqueConstraint(text, 'desc') ,{}) 
+  __table_args__= (UniqueConstraint(url, 'url') ,{}) 
 
   def __init__(self,pid=None,cid=None,url=None,text=None):
-    self.pid=pid
+    self.pid=int(pid)
     self.cid=cid
     self.url=url
     self.text=text
     return
+
+  def __eq__(self,other):
+    if other is None or not hasattr(other,'pid'):
+      return False
+    if self.pid == other.pid:
+      return True
+    return False
+  def __ne__(self,other):
+    return not self.__eq__(other)
+  def __hash__(self):
+    return hash(self.pid)
+
   def __repr__(self):
     return '<Emission %s pid="%s">'%(repr(self.text),self.pid)  
 
@@ -100,7 +139,7 @@ class Video(Base):
   url=Column(String(1000))
   streams=relationship("Stream",backref='video')
 
-  __table_args__= (UniqueConstraint(url, 'url'), UniqueConstraint(text, 'desc') ,{}) 
+  __table_args__= (UniqueConstraint(url, 'url') ,{}) 
 
   parsed=False
   srcUrl='http://service.canal-plus.com/video/rest/getVideosLiees/cplus/%d'
@@ -113,14 +152,6 @@ class Video(Base):
     self.parsed=False
     return
 
-  def update(self,title,subtitle):
-    self.title=title
-    self.subtitle=subtitle
-    self.text='%s - %s'%(self.title,self.subtitle)
-    self.parsed=True
-    log.debug('Updated %s'%self)    
-    return
-
   def bestStream(self):
     if len(self.streams) == 0:
       return None
@@ -130,9 +161,19 @@ class Video(Base):
           return self.streams[qual]
       return self.streams[0]
 
+  def __eq__(self,other):
+    if other is None or not hasattr(other,'vid') or not hasattr(other,'pid'):
+      return False
+    if self.vid == other.vid and self.pid == other.pid:
+      return True
+    return False
+  def __ne__(self,other):
+    return not self.__eq__(other)
+  def __hash__(self):
+    return hash(self.vid)+hash(self.pid)
+
   def __repr__(self):
     return "<Video %d-%d: %s>"%(self.pid, self.vid,repr(self.text))
-
 
 class Stream(Base):
   '''
@@ -166,7 +207,18 @@ class Stream(Base):
   def makeFilename(self):
     self.filename=os.path.sep.join(['./output',os.path.basename(self.url)])
     return self.filename
- 
+
+  def __eq__(self,other):
+    if other is None or not hasattr(other,'vid') or not hasattr(other,'quality'):
+      return False
+    if self.vid == other.vid and self.quality == other.quality:
+      return True
+    return False
+  def __ne__(self,other):
+    return not self.__eq__(other)
+  def __hash__(self):
+    return hash(self.vid)+hash(self.quality)
+      
   def __repr__(self):
     low=min(len(self.url),20)
     up=max(0,len(self.url)-20)    

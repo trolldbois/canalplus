@@ -35,7 +35,7 @@ class Parser:
     return
   
   def findAll(self,root):
-    return iter( [self.parse(myCls) for myCls in root.xpath(self.xPath)] )
+    return iter( [ obj for obj in [self.parse(myCls) for myCls in root.xpath(self.xPath)] if obj is not None] )
   
   def parse(self,el):
     if el is None:
@@ -60,8 +60,11 @@ class Parser:
     #if text is not None:
     #  #print text
     #  #text=obj.text.decode(obj.encoding)
-    obj=self.makeInstance(a,text,url)
-    obj.element=el
+    try:
+      obj=self.makeInstance(a,text,url)
+      obj.element=el
+    except Exception,e:
+      return None
     self.log.debug(obj)
     self.log.debug('')
     return obj
@@ -138,6 +141,7 @@ class EmissionParser(Parser):
     self.cat=cat
     Parser.__init__(self,cls,self.xPath,self.subPath)
     return
+  #
   def getId(self,url):
     '''      Get emission's unique identifier.
       Programme Id.
@@ -146,13 +150,16 @@ class EmissionParser(Parser):
     # PID is in the URL
     pids=re.findall(self.pidRE,url)
     if len(pids) !=1:
-      log.warning('Erreur while parsing PID')
+      log.warning('Erreur while parsing PID for %s'%(url))
       return None
     pid=int(pids[0])
     return pid
   #
   def makeInstance(self,a,text,url):
-    obj=self.cls(pid=self.getId(url),url=url,text=text,cid=self.cat.cid)
+    pid=self.getId(url)
+    if pid is None:
+      return None
+    obj=self.cls(pid=pid,url=url,text=text,cid=self.cat.text)
     return obj
 
 class VideoParser(Parser):
@@ -187,37 +194,41 @@ class StreamParser(Parser):
   idPath='./ID'
   infoTitrePath='./INFOS/TITRAGE/TITRE'
   infoSousTitrePath='./INFOS/TITRAGE/SOUS_TITRE'
-  def __init__(self):
+  def __init__(self,emission,cache):
     cls=Stream
+    self.emission=emission
+    self.cache=cache
     return
   #
-  def findAll(self,root,video):
+  def findAll(self,root):
     ''' 
     We return a dictionary of several Videos referenced in the XML file
     '''
     videos=set()
+    streams=set()
     # on recupere plusieurs videos en realite ...
     elements=root.xpath(self.videosPath)
     # we parse each child to get a new Video with the 3 Streams
     log.info('parsing Video XML chunk for %d Videos'%( len(elements)) )
     for desc in elements:
+      # videos compares on vid and pid
       vid=int(desc.xpath(self.idPath)[0].text)
       # check for error, vide videoId == -1
       if vid == -1:
-        self.writeToFile(data,video,video.vid)
-        ## and save a DEADLINK Stream to keep it out from future round
-        video.url='DEADLINK'
-        raise VideoNotFetchable(video)
-      log.debug('parsing XML chunk for  %s'%(vid) )
+        raise VideoNotFetchable()
+      #test for presence in cache
       # Create Video before creating it's streams
       text='%s - %s'%(clean(desc,self.infoTitrePath), clean(desc,self.infoSousTitrePath))
-      videos.add(
-      myVideo=Video(vid,video.pid,text))
-      myVideo.update( clean(desc,self.infoTitrePath), clean(desc,self.infoSousTitrePath))
+      myVideo=Video(vid,self.emission.pid,text)
+      if myVideo in self.cache:
+        log.info('already parsed in previous XML %s'%(myVideo))
+        continue
+      log.debug('parsing XML chunk for  %s'%(vid) )
+      videos.add(myVideo)
       log.debug('%s added to cache'%(vid) )
       # creating streams
       streamsEl=desc.xpath(self.streamPath)
-      streams=[Stream(vid,s.tag,s.text) for s in streamsEl if s.text is not None]
+      streams.update([Stream(vid,s.tag,s.text) for s in streamsEl if s.text is not None])
       log.debug('%d streams created '%( len(streams)) )
     return videos,streams
   #

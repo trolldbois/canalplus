@@ -46,9 +46,7 @@ class Fetcher():
       }
   stats=Stats()
   params=dict()
-  def __init__(self,session,method=METHOD,server=SERVER,port=PORT):
-    #save SQL ORM
-    self.session=session
+  def __init__(self,method=METHOD,server=SERVER,port=PORT):
     # open connection
     self.METHOD=method
     self.SERVER=server
@@ -97,10 +95,6 @@ class Fetcher():
 
 class MainFetcher(Fetcher):
   ROOTURL='/'
-  def __init__(self,session):
-    Fetcher.__init__(self,session)
-    return
-  
   def fetch(self):
     # make the request
     log.debug('requesting %s'%(self.ROOTURL))
