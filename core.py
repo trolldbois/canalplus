@@ -4,16 +4,12 @@
 # Copyright (C) 2011 Loic Jaquemet loic.jaquemet+python@gmail.com
 #
 
-
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import create_engine
+#mechanize
 
 import httplib, logging, os, re, sqlite3
 import StringIO, gzip
-#mechanize
-from lxml.etree import tostring
 
-from model import Theme,Categorie,Emission,Video,Stream
+from model import Emission,Video
 
 
 log=logging.getLogger('core')
@@ -21,9 +17,6 @@ log=logging.getLogger('core')
 SERVER='www.canalplus.fr'
 PORT=80
 METHOD='GET'
-
-
-
 
 class Stats:
   NUMREQUEST=0
@@ -101,194 +94,63 @@ class Fetcher():
         data=self.uncompress(data)
       return data
 
-  def writeToFile(self,data,obj,dirname='./test'):
-    '''
-    save content to file <dirname>/<self.id>
-    '''
-    filename=os.path.sep.join([dirname,'%s-%d'%(obj.__class__.__name__,obj.getId()) ])
-    fout=file(filename,'w')
-    fout.write(data)
-    log.info('Written to file %s'%(filename))
-    return
 
-
-class Parser:
-  def __init__(self,cls,subPath):
-    self.cls=cls
-    self.subPath=subPath
-    self.log=logging.getLogger(self.__class__.__name__)
+class MainFetcher(Fetcher):
+  ROOTURL='/'
+  def __init__(self,session):
+    Fetcher.__init__(self,session)
     return
   
-  def parse(self,el):
-    if el is None:
-      self.log.debug('Element is None')
-      return None
-    self.log.debug('Parsing a %s'%self.cls)
-    text=''
-    url=''
-    a=''
-    res=el.xpath(self.subPath)
-    if len(res)==0:
-      self.log.debug('DOM error, falling back to xpath string(), no url ')
-      self.log.debug('tree element : %s'%(repr(tostring(el))))
-      text=el.xpath('string()')
-    else:
-      a=res[0]
-      self.log.debug('A %s'%(repr(tostring(a))))
-      text=a.text
-      self.log.debug('TEXT %s '%(repr(text) ))
-      url=a.get('href')
-      self.log.debug('url %s '%(repr(url) ))
-    #if text is not None:
-    #  #print text
-    #  #text=obj.text.decode(obj.encoding)
-    obj=self.makeInstance(a,text,url)
-    obj.element=el
-    self.log.debug(obj)
-    self.log.debug('')
-    return obj
-  #
-  def writeToFile(self,data,obj,dirname='./test'):
+  def fetch(self):
+    # make the request
+    log.debug('requesting %s'%(self.ROOTURL))
+    Fetcher.request(self,self.ROOTURL)
+    data=self.handleResponse()
+    return data    
+
+class EmissionFetcher(Fetcher):
+  '''
+  Http fetcher for an emission.
+  '''
+  def fetch(self,emission):
     '''
-    save content to file <dirname>/<self.id>
+      Loads a Emission Html page content from network.
     '''
-    filename=os.path.sep.join([dirname,'%s-%d'%(obj.__class__.__name__,obj.getId()) ])
-    fout=file(filename,'w')
-    fout.write(data)
-    log.info('Written to file %s'%(filename))
-    return  
-  #
-  def makeInstance(self,a,text,url):
-    raise NotImplementedError()
+    # make the request
+    log.debug('requesting %s'%(emission.url))
+    Fetcher.request(self,emission.url)
+    data=self.handleResponse()
+    if(data is None):
+      raise EmissionNotFetchable(emission)
+    return data
 
-class ThemeParser(Parser):
-  tidRE='.+pid(\d+).+'
-  xPath='/html/body/div[2]/div[9]/div[position()>2 and position()<8]'
-  subPath='./h2[1]/a[1]'
-  def __init__(self):
-    cls=Theme
-    Parser.__init__(self,cls,self.subPath)
-    return
-  #
-  def getId(self,url):
-    '''      Get theme's unique identifier.    '''
-    tid=None
-    # if there is url, we can parse it to get the TID
-    if url is not None :
-      # TID is in the URL
-      tids=re.findall(self.tidRE,url)
-      if len(tids) !=1:
-        log.warning('Erreur while parsing TID')
-        return None
-      tid=int(tids[0])
-    else:
-      return None
-    return tid
-  #
-  def makeInstance(self,a,text,url):
-    obj=self.cls(tid=self.getId(url),url=url,text=text)
-    return obj
-  
-class CategorieParser(Parser):
-  xPath='./div/h3'
-  subPath='./a'
-  def __init__(self,theme):
-    cls=Categorie
-    self.theme=theme
-    Parser.__init__(self,cls,self.subPath)
-    return
-  #
-  def makeInstance(self,a,text,url):
-    obj=self.cls(text=text,tid=self.theme.tid)
-    return obj
 
-class EmissionParser(Parser):
-  xPath='..//a'
-  subPath='.'
-  pidRE='.+[c,p]id(\d+).+'
-  def __init__(self,cat):
-    cls=Emission
-    self.cat=cat
-    Parser.__init__(self,cls,self.subPath)
-    return
-  def getId(self,url):
-    '''      Get emission's unique identifier.
-      Programme Id.
+class VideoFetcher(Fetcher):
+  def fetch(self,video):
+    '''  On recupere le contenu par le reseau
     '''
-    # if there is not url, we can't parse it to get the PID
-    # PID is in the URL
-    pids=re.findall(self.pidRE,url)
-    if len(pids) !=1:
-      log.warning('Erreur while parsing PID')
-      return None
-    pid=int(pids[0])
-    return pid
-  #
-  def makeInstance(self,a,text,url):
-    obj=self.cls(pid=self.getId(url),url=url,text=text,cid=self.cat.cid)
-    return obj
+    # make the request
+    log.debug('requesting %s'%(video.url))
+    Fetcher.request(self,video.url)
+    data=self.handleResponse()
+    if(data is None):
+      raise VideoNotFetchable(video)
+    return data
 
-class VideoParser(Parser):
-  xPath='id("contenuOnglet")//h4'
-  subPath='./a'
-  # the regexp to get an Video Id from a url
-  vidRE='.vid=(\d+)'
-  def __init__(self,emission):
-    self.emission=emission
-    cls=Video
-    #Parser.__init__(self,cls,self.subPath)
-    return
 
-  def parse(self,el):
-    ''' An Emission's videos are identified bt their VID in the url
+class FileFetcher:
+  stats=Stats()
+  def __init__(self,filename):
+    self.filename=filename
+  def fetch(self,obj):
     '''
-    text=el.xpath('string()').strip()
-    vid=re.findall(self.vidRE,el.xpath(self.subPath)[0].get('href'))[0]
-    video=Video(vid=vid,pid=self.emission.pid,text=text)
-    return video
-
-class StreamParser(Parser):
-  # Xpath values
-  videosPath='/VIDEOS/VIDEO'
-  streamPath='./MEDIA/VIDEOS/*'
-  idPath='./ID'
-  infoTitrePath='./INFOS/TITRAGE/TITRE'
-  infoSousTitrePath='./INFOS/TITRAGE/SOUS_TITRE'
-  def __init__(self):
-    cls=Stream
-    return
-  def parse(self,el):
-    raise NotImplementedError()
-    
-  def parseAll(self,data,video):
-    ''' 
-    We return a dictionary of several Videos referenced in the XML file
+      Loads a page content from file on disk.
     '''
-    videos=set()
-    # on recupere plusieurs videos en realite ...
-    root=lxml.etree.fromstring(data)
-    elements=root.xpath(self.videosPath)
-    # we parse each child to get a new Video with the 3 Streams
-    log.info('parsing Video XML chunk for %d Videos'%( len(elements)) )
-    for desc in elements:
-      vid=int(desc.xpath(self.idPath)[0].text)
-      # check for error, vide videoId == -1
-      if vid == -1:
-        self.writeToFile(data,video)
-        ## and save a DEADLINK Stream to keep it out from future round
-        video.url='DEADLINK'
-        raise VideoNotFetchable(video)
-      log.debug('parsing XML chunk for  %s'%(vid) )
-      # Create Video before creating it's streams
-      text='%s - %s'%(clean(desc,self.infoTitrePath), clean(desc,self.infoSousTitrePath))
-      videos.add(
-      myVideo=Video(vid,video.pid,text))
-      myVideo.update( clean(desc,self.infoTitrePath), clean(desc,self.infoSousTitrePath))
-      log.debug('%s added to cache'%(vid) )
-      # creating streams
-      streamsEl=desc.xpath(self.streamPath)
-      streams=[Stream(vid,s.tag,s.text) for s in streamsEl if s.text is not None]
-      log.debug('%d streams created '%( len(streams)) )
-    return videos,streams
-
+    data=codecs.open(self.filename,"r").read()
+    #try:
+    #  data=codecs.open(self.filename,"r","utf-8" ).read()
+    #except UnicodeDecodeError,e:
+    #  data=codecs.open(self.filename,"r","iso-8859-15" ).read()
+    #  #data=unicode(data,'utf-8') 
+    return data
 

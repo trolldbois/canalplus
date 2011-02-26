@@ -4,12 +4,12 @@
 # Copyright (C) 2011 Loic Jaquemet loic.jaquemet+python@gmail.com
 #
 
-
-from exception import Wtf,VideoNotFetchable,EmissionNotFetchable
 import codecs,logging,os,random
 
-from main import Main,EmissionFetcher,VideoFetcher
-from core import EmissionParser,VideoParser,StreamParser
+from exception import Wtf,VideoNotFetchable,EmissionNotFetchable
+from main import Main
+from core import EmissionFetcher,VideoFetcher
+from parser import EmissionParser,VideoParser,StreamParser
 from model import Theme,Categorie,Emission,Video,Stream
 
 import lxml,lxml.html, lxml.etree
@@ -95,7 +95,8 @@ class Update:
         fetcher=VideoFetcher()
         data=fetcher.fetch(video)
         # parse Xml for video
-        newvideos,newstreams=streamParser.parseAll(data,video)
+        root=lxml.etree.fromstring(data)
+        newvideos,newstreams=streamParser.findAll(data,video)
         # put model in session
         newvideos=[self.session.merge(myVid) for myVid in newvideos]
         newstreams=[self.session.merge(myStream) for myStream in newstreams]
@@ -118,6 +119,7 @@ class Printer:
     for em, vid in session.query(Emission,Video).join(Video).filter(Emission.pid==emId).order_by( desc(Video.vid) ).limit(4):
       vids.add(vid)
       log.debug('%s %s %10s\t%s'%(em.text, vid.text, vid.bestStream().quality, vid.bestStream().url))
+      print '%s %s %10s\t%s'%(em.text, vid.text, vid.bestStream().quality, vid.bestStream().url)
     return vids
 
 
@@ -128,7 +130,9 @@ def main():
   ## or just the one we want
   pids=[1830,1784]
   for pid in pids:
-    print u.updateEmission(u.session.query(Emission).get(pid))
+    for vid in u.updateEmission(u.session.query(Emission).get(pid)):
+      pass
+      #print 'Emission ',pid,'video ',vid.vid,vid.text
   #
   p=Printer()
   p.lastVideos(1830)

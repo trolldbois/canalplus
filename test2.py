@@ -10,9 +10,6 @@ import codecs,logging,os,random
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session,sessionmaker
 
-from core import Fetcher
-from core import Stats,ThemeParser,CategorieParser,EmissionParser,VideoParser,StreamParser
-
 from model import Theme,Categorie,Emission,Video,Stream
 
 log=logging.getLogger('test')

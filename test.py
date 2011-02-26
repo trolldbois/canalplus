@@ -8,8 +8,7 @@
 import codecs,logging,os,random
 
 from main import Main
-from core import Stats
-from core import ThemeParser,CategorieParser,EmissionParser,VideoParser,StreamParser
+from parser import ThemeParser,CategorieParser,EmissionParser,VideoParser,StreamParser
 
 import lxml,lxml.html
 
@@ -24,24 +23,6 @@ engine = create_engine('sqlite:///canalplus.db',echo=True)
 Session = scoped_session(sessionmaker(autocommit=False,
                                       autoflush=False,
                                       bind=engine))
-
-
-
-class FileFetcher:
-  stats=Stats()
-  def __init__(self,filename):
-    self.filename=filename
-  def fetch(self):
-    '''
-      Loads a page content from file on disk.
-    '''
-    data=codecs.open(self.filename,"r").read()
-    #try:
-    #  data=codecs.open(self.filename,"r","utf-8" ).read()
-    #except UnicodeDecodeError,e:
-    #  data=codecs.open(self.filename,"r","iso-8859-15" ).read()
-    #  #data=unicode(data,'utf-8') 
-    return data
 
 
 def showTree():

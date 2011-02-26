@@ -16,23 +16,6 @@ log=logging.getLogger('fetcher')
 import signal
 signal.signal(signal.SIGINT, sys.exit)
 
-class FileFetcher:
-  stats=Stats()
-  def __init__(self,filename):
-    self.filename=filename
-  def fetch(self,obj):
-    '''
-      Loads a page content from file on disk.
-    '''
-    data=codecs.open(self.filename,"r").read()
-    #try:
-    #  data=codecs.open(self.filename,"r","utf-8" ).read()
-    #except UnicodeDecodeError,e:
-    #  data=codecs.open(self.filename,"r","iso-8859-15" ).read()
-    #  #data=unicode(data,'utf-8') 
-    return data
-
-
 def showTree():
   logging.basicConfig(filename='show.log',level=logging.DEBUG)
   main=Main()
