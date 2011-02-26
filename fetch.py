@@ -5,13 +5,16 @@
 #
 
 
-import codecs,logging,os,random
+import codecs,logging,os,random,sys
 
 from core import Stats
-from theme import Main,ThemeBuilder
+from main import Main
 from update import Printer
 
 log=logging.getLogger('fetcher')
+
+import signal
+signal.signal(signal.SIGINT, sys.exit)
 
 class FileFetcher:
   stats=Stats()
@@ -53,8 +56,9 @@ class Fetcher:
   def fetchNew(self,emId):
     p=Printer()
     videos=p.lastVideos(emId)
-    for video in videos.itervalues():
+    for video in videos:
       s=video.bestStream()
+      print s
       if os.access(s.makeFilename(),os.F_OK):
         continue
       s.fetchStream()

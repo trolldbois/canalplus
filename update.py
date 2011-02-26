@@ -114,9 +114,11 @@ class Update:
 class Printer:
   def lastVideos(self,emId):
     session=Session()
+    vids=set()
     for em, vid in session.query(Emission,Video).join(Video).filter(Emission.pid==emId).order_by( desc(Video.vid) ).limit(4):
-      print '%s %s %10s\t%s'%(em.text, vid.text, vid.bestStream().quality, vid.bestStream().url)
-    return em
+      vids.add(vid)
+      log.debug('%s %s %10s\t%s'%(em.text, vid.text, vid.bestStream().quality, vid.bestStream().url))
+    return vids
 
 
 def main():
@@ -127,11 +129,11 @@ def main():
   pids=[1830,1784]
   for pid in pids:
     print u.updateEmission(u.session.query(Emission).get(pid))
-
   #
   p=Printer()
   p.lastVideos(1830)
   p.lastVideos(1784)
+  
 
 if __name__ == '__main__':
   main()

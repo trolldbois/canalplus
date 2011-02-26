@@ -53,33 +53,15 @@ def showTree():
 
 def printTree(themes):
   for t in themes:
-    print t
+    print t.text
     for c in t.categories:
-      print '\t',c
+      print '\t',c.text
       for e in c.emissions:
-        print '\t\t',e
+        print '\t\t',e.text
         for v in e.videos:
-          print '\t\t\t',v, '%d videos'%( len(v.streams) )
+          print '\t\t\t',v.text, '%d videos'%( len(v.streams) )
 
 
-def testGuignols():
-  logging.basicConfig(level=logging.DEBUG)
-  cache=dict()
-  # loading a Emission page
-  ## make up an url
-  href=lxml.etree.Element("a")
-  href.set('href','http://www.canalplus.fr/c-divertissement/pid1784-les-guignols-de-l-info.html?')
-  ## build the Emission
-  em=Emission(href)
-  em.parseContent()
-  print em.videos.values()
-  ## we now have a bunch of videos we nee to fetch
-  cache=dict()
-  for vid in em.videos.values():
-    vid.parseContent(cache)
-    print vid
-    for s in vid.streams.values():
-      print '\t',s
 
 
 def testTheme(filename='test/index.html'):
@@ -103,29 +85,6 @@ def testVideoParser(filename=None):
   videos=[videoParser.parse(element) for element in root.xpath(videoParser.xPath)]
   print videos
   
-def testVideoXml():
-  logging.basicConfig(level=logging.DEBUG)
-  cache=dict()
-  session=Session()
-  
-  v=Video(421738,3299,'Album de la semaine')
-  print v
-  video=Video(419796,1784,'LES GUIGNOLS')
-  print video
-  
-  filefetcher=FileFetcher('test/419796')
-  videofetcher=VideoFetcher(session)
-  data=videofetcher.fetch=filefetcher.fetch
-  videofetcher.parseContent(video,cache)
-
-  for vfk,vf in cache.items():
-    print vfk,vf
-  #
-  for s in cache[video.vid].streams:
-    print s
-  
-  print ''
-  session.commit()
 
 
 #testVideoXml()
