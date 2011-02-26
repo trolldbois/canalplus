@@ -45,7 +45,7 @@ class VideoFetcher(Fetcher):
   infoTitrePath='./INFOS/TITRAGE/TITRE'
   infoSousTitrePath='./INFOS/TITRAGE/SOUS_TITRE'
 
-  def __init__(self,session):
+  def __init__(self,session=None):
     Fetcher.__init__(self,session)
     return
 
@@ -53,8 +53,8 @@ class VideoFetcher(Fetcher):
     '''  On recupere le contenu par le reseau
     '''
     # make the request
-    log.debug('requesting %s'%(video.getUrl()))
-    Fetcher.request(self,video.getUrl())
+    log.debug('requesting %s'%(video.url))
+    Fetcher.request(self,video.url)
     data=self.handleResponse()
     return data
   #

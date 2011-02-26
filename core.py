@@ -34,6 +34,14 @@ def remove_html_tags(data):
     return p.sub('', data)
 
 
+def clean(tree,el):
+  value=tree.xpath(el)
+  if value is None or len(value) <1:
+    value=None
+  else:
+    value = value[0].text
+  return value
+
 class Fetcher():
   headers={'Accept-Language': 'fr,en-us;q=0.7,en;q=0.3', 
           'Accept-Encoding': 'gzip,deflate', 
@@ -140,6 +148,16 @@ class Parser:
     self.log.debug('')
     return obj
   #
+  def writeToFile(self,data,obj,dirname='./test'):
+    '''
+    save content to file <dirname>/<self.id>
+    '''
+    filename=os.path.sep.join([dirname,'%s-%d'%(obj.__class__.__name__,obj.getId()) ])
+    fout=file(filename,'w')
+    fout.write(data)
+    log.info('Written to file %s'%(filename))
+    return  
+  #
   def makeInstance(self,a,text,url):
     raise NotImplementedError()
 
@@ -188,8 +206,6 @@ class EmissionParser(Parser):
   xPath='..//a'
   subPath='.'
   pidRE='.+[c,p]id(\d+).+'
-  # the regexp to get an Video Id from a url
-  vidRE='.vid=(\d+)'
   def __init__(self,cat):
     cls=Emission
     self.cat=cat
@@ -213,17 +229,66 @@ class EmissionParser(Parser):
     return obj
 
 class VideoParser(Parser):
-  def __init__(self):
-    aPath='.'
+  xPath='id("contenuOnglet")//h4'
+  subPath='./a'
+  # the regexp to get an Video Id from a url
+  vidRE='.vid=(\d+)'
+  def __init__(self,emission):
+    self.emission=emission
     cls=Video
-    Parser.__init__(self,cls,aPath)
+    #Parser.__init__(self,cls,self.subPath)
     return
 
+  def parse(self,el):
+    ''' An Emission's videos are identified bt their VID in the url
+    '''
+    text=el.xpath('string()').strip()
+    vid=re.findall(self.vidRE,el.xpath(self.subPath)[0].get('href'))[0]
+    video=Video(vid=vid,pid=self.emission.pid,text=text)
+    return video
+
 class StreamParser(Parser):
+  # Xpath values
+  videosPath='/VIDEOS/VIDEO'
+  streamPath='./MEDIA/VIDEOS/*'
+  idPath='./ID'
+  infoTitrePath='./INFOS/TITRAGE/TITRE'
+  infoSousTitrePath='./INFOS/TITRAGE/SOUS_TITRE'
   def __init__(self):
-    aPath='.'
     cls=Stream
-    Parser.__init__(self,cls,aPath)
     return
+  def parse(self,el):
+    raise NotImplementedError()
+    
+  def parseAll(self,data,video):
+    ''' 
+    We return a dictionary of several Videos referenced in the XML file
+    '''
+    videos=set()
+    # on recupere plusieurs videos en realite ...
+    root=lxml.etree.fromstring(data)
+    elements=root.xpath(self.videosPath)
+    # we parse each child to get a new Video with the 3 Streams
+    log.info('parsing Video XML chunk for %d Videos'%( len(elements)) )
+    for desc in elements:
+      vid=int(desc.xpath(self.idPath)[0].text)
+      # check for error, vide videoId == -1
+      if vid == -1:
+        self.writeToFile(data,video)
+        ## and save a DEADLINK Stream to keep it out from future round
+        video.url='DEADLINK'
+        raise VideoNotFetchable(video)
+      log.debug('parsing XML chunk for  %s'%(vid) )
+      # Create Video before creating it's streams
+      text='%s - %s'%(clean(desc,self.infoTitrePath), clean(desc,self.infoSousTitrePath))
+      videos.add(
+      myVideo=Video(vid,video.pid,text))
+      myVideo.update( clean(desc,self.infoTitrePath), clean(desc,self.infoSousTitrePath))
+      log.debug('%s added to cache'%(vid) )
+      # creating streams
+      streamsEl=desc.xpath(self.streamPath)
+      streams=[Stream(vid,s.tag,s.text) for s in streamsEl if s.text is not None]
+      log.debug('%d streams created '%( len(streams)) )
+    return videos,streams
 
 

@@ -9,6 +9,9 @@ import codecs,logging,os,random
 
 from main import Main
 from core import Stats
+from core import ThemeParser,CategorieParser,EmissionParser,VideoParser,StreamParser
+
+import lxml,lxml.html
 
 from model import Theme,Categorie,Emission,Video,Stream
 
@@ -91,29 +94,14 @@ def testTheme(filename='test/index.html'):
   return
 
 
-def testEmission(filename=None):
+def testVideoParser(filename=None):
   logging.basicConfig(level=logging.DEBUG)
-  cache=dict()
-  # (fake) loading a Emission page
-  ## make up an url
-  href=lxml.etree.Element("a")
-  href.set('href','http://www.canalplus.fr/c-divertissement/pid1784-les-guignols-de-l-info.html?')
-  ## build the Emission
-  em=Emission(href)
-  print em
-  ## style faking the load
-  filefetcher=FileFetcher('test/guignols.html')
-  if filename is not None:
-    filefetcher=FileFetcher(filename)
-  em.parseContent(filefetcher)
-  print em.videos.values()
-  ## we now have a bunch of videos we nee to fetch
-  cache=dict()
-  for vid in em.videos.values():
-    vid.parseContent(cache)
-    print vid
-    for s in vid.streams.values():
-      print '\t',s
+  f=file('test/guignols.html')
+  emission=Emission(pid=1784,text='LES GUIGNOLS')
+  root=lxml.html.parse(f)
+  videoParser=VideoParser(emission)
+  videos=[videoParser.parse(element) for element in root.xpath(videoParser.xPath)]
+  print videos
   
 def testVideoXml():
   logging.basicConfig(level=logging.DEBUG)
@@ -141,8 +129,6 @@ def testVideoXml():
 
 
 #testVideoXml()
-#testEmission('test/EmissionPOPO-3442')
+testVideoParser()
 #testGuignols()
-
-
-testTheme()
+#testTheme()

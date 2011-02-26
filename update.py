@@ -7,14 +7,18 @@
 
 import codecs,logging,os,random
 
-from emission import EmissionNotFetchable,EmissionBuilder,EmissionDatabase
-from video import VideoNotFetchable,VideoBuilder
 from main import Main
+from emission import EmissionFetcher
+from core import EmissionParser,VideoParser,StreamParser
+from model import Theme,Categorie,Emission,Video,Stream
+
+import lxml,lxml.html, lxml.etree
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session,sessionmaker
+from sqlalchemy.sql.expression import desc
 
-engine = create_engine('sqlite:///canalplus.db',echo=True)
+engine = create_engine('sqlite:///canalplus.db',echo=False)
 Session = scoped_session(sessionmaker(autocommit=False,
                                       autoflush=False,
                                       bind=engine))
@@ -22,9 +26,6 @@ Session = scoped_session(sessionmaker(autocommit=False,
 log=logging.getLogger('update')
 
 class Update:
-  cache=dict()
-  ebuilder=EmissionBuilder()
-  vbuilder=VideoBuilder()
   def __init__(self):
     self.session=Session()
     return
@@ -43,75 +44,79 @@ class Update:
     logging.basicConfig(filename='resync.log',level=logging.DEBUG)
     main=Main()
     main.parseContent()
-    #force update
-    main.save(update=True)
     # load all new videos XML files from  
     self.updateVideos(True)
 
-    
-  def updateVideos(self):
-    ems=self.ebuilder.loadDb()
-    # we exclude already parsed Videos XMLs. the stream should be in DB.
-    self.cache=self.vbuilder.loadVideosWithStreams()
-    done=0
-    # histoire de...
+  def updateEmissions(self):
+    ''' update out of sync videos'''
+    ems=session.query(Emission).order_by(Emission.ts).desc()
     #random.shuffle(ems)
     for em in ems:
       try:
         videos=self.updateEmission(em)
+        streams=self.updateVideos(em)
       except EmissionNotFetchable,e:
         log.warning(e)
         continue
       done+=1
       log.info("[%3d/%3d] %d new videos \t %s"%(done,len(ems)-done, len(videos),em))
     return
+  
 
-  def updateEmission(self,em,force=False):
+  def updateEmission(self,emission,force=False):
     newVideos=set()
     # Refresh content
-    em.parseContent()
-    ## we now have a bunch of videos XML we need to fetch
-    cache=self.cache
-    if force:
-      # we go with empty cache
-      cache=dict()
-    cntStream=0
-    for vid in em.videos.values():
+    fetcher=EmissionFetcher(self.session)
+    data=fetcher.fetch(emission)
+
+    root=lxml.html.fromstring(data)
+    videoParser=VideoParser(emission)
+    videos=[videoParser.parse(element) for element in root.xpath(videoParser.xPath)]
+    
+    for vid in videos:
+      #add/check if video is in DB.
+      self.session.merge(vid)
+    # all videos are in db. Streams are next
+    return videos
+    
+  def updateVideos(self,emission):
+    #reload only videos with no streams for emission em
+    videos=self.session.query(Video).with_parent(emission).filter(~Videos.streams.any())
+    parsed=set()
+    streamParser=VideoParser()
+    cntStreams=0
+    for video in videos:
       try:
-        vid.parseContent(cache)
+        # step 1
+        if videos in parsed:
+          log.debug('Video stream XML already parsed %s'%(video))
+          continue
+        # fetch XML file
+        fetcher=VideoFetcher()
+        data=fetcher.fetch(video)
+        # parse Xml for video
+        newvideos,newstreams=streamParser.parseAll(data,video)
+        # put model in session
+        newvideos=[self.session.merge(myVid) for myVid in newvideos]
+        newstreams=[self.session.merge(myStream) for myStream in newstreams]
+        cntStream+=len(newstreams)
+        # cache parsed videos for step 1
+        parsed.update(newvideos)
       except VideoNotFetchable,v:
-        v.video.save() ## e1
-        v.video.streams[0].save() ## s1
-        em.updateTs()
         continue
-      vid.save()
-      # empty cache means, we need to reload vid from cache
-      # if not forced , we do not reload XML from db-stored videos
-      # so streams will be empty 
-      for s in cache[vid.getId()].streams.values():
-        if s.save() > 0:
-          cntStream+=1
-          newVideos.add(vid)
-    cntVideos=len(newVideos)
+    #finished
+    cntVideos=len(parsed)
     if (cntVideos+cntStream >0 ): 
-      log.info("\t%3d new Videos - %3d new streams"%(cntVideos,cntStream ))
-    # update timestamps
-    em.updateTs()
-    return newVideos
+      log.info("\t%3d Videos parsee - %3d new streams"%(cntVideos,cntStream ))
+    return parsed
 
 
 class Printer:
   def lastVideos(self,emId):
-    emDb=EmissionDatabase()
-    newVideos=set()
-    em=emDb[emId]
-    # get videos and streams
-    vBuilder=VideoBuilder()
-    em.addVideos(vBuilder.loadForEmission(em))
-    for vid in em.videos.itervalues():
-      for stream in vid.streams.itervalues():
-        print '%s %s %10s\t%s'%(em.text, vid.text,stream.quality,stream.url)
-    return em.videos
+    session=Session()
+    for em, vid in session.query(Emission,Video).join(Video).filter(Emission.pid==emId).order_by( desc(Video.vid) ).limit(4):
+      print '%s %s %10s\t%s'%(em.text, vid.text, vid.bestStream().quality, vid.bestStream().url)
+    return em
 
 
 def main():
@@ -119,9 +124,10 @@ def main():
   # update all emission
   #u.updateNew()
   ## or just the one we want
-  db=EmissionDatabase()
-  print u.updateEmission(db[1830])
-  print u.updateEmission(db[1784])
+  pids=[1830,1784]
+  for pid in pids:
+    print u.updateEmission(u.session.query(Emission).get(pid))
+
   #
   p=Printer()
   p.lastVideos(1830)
