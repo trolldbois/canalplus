@@ -1,0 +1,12 @@
+
+To refresh(create) the database
+>>> python update.py refresh
+
+To refresh my favorite shows
+>>> python update.py
+
+
+To download my favorite shows
+>>> python fetch.py
+
+
