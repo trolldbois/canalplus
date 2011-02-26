@@ -8,7 +8,7 @@
 import logging, re
 import lxml.html
 
-from core import Base, Database,Element,Fetcher,Wtf,parseElement
+from core import Base,Element,Fetcher,Wtf
 from emission import EmissionNotFetchable
 
 from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, UniqueConstraint

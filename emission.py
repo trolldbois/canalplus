@@ -7,7 +7,7 @@
 
 import logging,lxml,re 
 
-from core import Base,Database,Element,Fetcher,Wtf,parseElement
+from core import Base,Element,Fetcher,Wtf
 
 
 from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, UniqueConstraint, DateTime
@@ -107,13 +107,6 @@ class Emission(Base):
     self.url=url
     self.text=text
     return
-
-  def addVideos(self,vids):
-    adds=[vid for vid in vids if vid.getId() not in self.videos]
-    for vid in adds:
-      self.videos[vid.vid]=vid
-      vid.setEmission(self)
-    return
     
   def getId(self):
     '''
@@ -133,12 +126,6 @@ class Emission(Base):
     self.pid=int(pids[0])
     return self.pid
 
-
-
-  def updateTs(self):
-    db=EmissionDatabase()
-    db.updateTs(self)
-    return
   #
   def __repr__(self):
     return '<Emission %s pid="%s">'%(repr(self.text),self.pid)  

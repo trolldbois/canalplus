@@ -9,7 +9,15 @@ import codecs,logging,os,random
 
 from emission import EmissionNotFetchable,EmissionBuilder,EmissionDatabase
 from video import VideoNotFetchable,VideoBuilder
-from theme import Main
+from main import Main
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import scoped_session,sessionmaker
+
+engine = create_engine('sqlite:///canalplus.db',echo=True)
+Session = scoped_session(sessionmaker(autocommit=False,
+                                      autoflush=False,
+                                      bind=engine))
 
 log=logging.getLogger('update')
 
@@ -17,16 +25,19 @@ class Update:
   cache=dict()
   ebuilder=EmissionBuilder()
   vbuilder=VideoBuilder()
+  def __init__(self):
+    self.session=Session()
+    return
   def updateNew(self):
     logging.basicConfig(filename='update.log',level=logging.DEBUG)
     #logging.getLogger('core').setLevel(logging.INFO)
-    main=Main()
+    main=Main(self.session)
     main.parseContent()
     # themes, categories and emissions are loaded
     # let's update the database with new emissions
-    main.save(update=False)
     # load all new videos XML files from  
     self.updateVideos()
+    self.session.commit()
     
   def resyncAll(self):
     logging.basicConfig(filename='resync.log',level=logging.DEBUG)

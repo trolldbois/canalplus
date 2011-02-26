@@ -10,18 +10,14 @@ import codecs,logging,os,random
 from main import Main
 from core import Stats
 
-from theme import Theme
-from categorie import Categorie
-from emission import Emission
-from video import Video,VideoFetcher
-from stream import Stream
+from model import Theme,Categorie,Emission,Video,Stream
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session,sessionmaker
 
 log=logging.getLogger('test')
 
-engine = create_engine('sqlite:///canalplus.db',echo=False)
+engine = create_engine('sqlite:///canalplus.db',echo=True)
 Session = scoped_session(sessionmaker(autocommit=False,
                                       autoflush=False,
                                       bind=engine))
@@ -32,7 +28,7 @@ class FileFetcher:
   stats=Stats()
   def __init__(self,filename):
     self.filename=filename
-  def fetch(self,obj):
+  def fetch(self):
     '''
       Loads a page content from file on disk.
     '''
@@ -55,11 +51,11 @@ def showTree():
 def printTree(themes):
   for t in themes:
     print t
-    for c in t.categories.values():
+    for c in t.categories:
       print '\t',c
-      for e in c.emissions.values():
+      for e in c.emissions:
         print '\t\t',e
-        for v in e.videos.values():
+        for v in e.videos:
           print '\t\t\t',v, '%d videos'%( len(v.streams) )
 
 
@@ -83,11 +79,13 @@ def testGuignols():
       print '\t',s
 
 
-def testTheme():
-  logging.basicConfig(filename='log.debug',level=logging.DEBUG)
+def testTheme(filename='test/index.html'):
+  #logging.basicConfig(filename='log.debug',level=logging.DEBUG)
+  logging.basicConfig(level=logging.DEBUG)
   main=Main()
-  filefetcher=FileFetcher('test/index.html')
+  filefetcher=FileFetcher(filename)
   main.parseContent(filefetcher)
+  print main.themes
   if True:
     printTree(main.themes.values())    
   return
@@ -143,8 +141,8 @@ def testVideoXml():
 
 
 #testVideoXml()
-testEmission('test/EmissionPOPO-3442')
+#testEmission('test/EmissionPOPO-3442')
 #testGuignols()
 
 
-
+testTheme()

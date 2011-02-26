@@ -8,15 +8,23 @@
 import logging, re
 import lxml.html
 
-from core import Database,Element,Fetcher,Wtf,parseElement
-from categorie import Categorie
-from emission import Emission,EmissionNotFetchable
+from core import Fetcher
+from core import Stats,ThemeParser,CategorieParser,EmissionParser,VideoParser,StreamParser
 
-
-from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, UniqueConstraint
+from model import Theme,Categorie,Emission,Video,Stream
 
 
 log=logging.getLogger('theme')
+
+
+
+class Wtf(Exception):
+  def __init__(self,obj=None):
+    self.obj=obj
+  def __str__(self):
+    if self.obj is not None:
+      return '%s'%(self.obj.__dict__)
+    return '' 
 
 
 class MainFetcher(Fetcher):
@@ -33,6 +41,9 @@ class MainFetcher(Fetcher):
     return data    
 
 
+class NullSession:
+  def merge(self,obj):
+    return obj
 
 class Main:
   '''
@@ -44,6 +55,12 @@ class Main:
   data=None
   themes=None
   root=None
+  #
+  def __init__(self,session=None):
+    self.session=session
+    if self.session is None:
+      self.session = NullSession()
+    return
   #
   def parseContent(self,fetcher):
     self.data=fetcher.fetch()
@@ -64,40 +81,32 @@ class Main:
   def makeThemes(self):
     if self.themes !=None:
       return self.themes
+    parser=ThemeParser()
     # else
     self.root=lxml.html.fromstring(self.data)
     #themes = '/html/body/div[2]/div[9]/div[3-7]/h2'
-    themesId='/html/body/div[2]/div[9]/div[position()>2 and position()<8]'
-    themes=[Theme(theme) for theme in self.root.xpath(themesId)]
+    #themesId='/html/body/div[2]/div[9]/div[position()>2 and position()<8]'
+    themes=[self.session.merge(parser.parse(theme)) for theme in self.root.xpath(parser.xPath)]
     self.themes=dict()
     for t in themes:
       self.themes[t.text]=t
     return self.themes
 
   def makeCategories(self,theme):
-    catPath='./div/h3'
-    categories=[Categorie(cat,theme.getId()) for cat in theme.element.xpath(catPath)]
+    #catPath='./div/h3'
+    parser=CategorieParser(theme)
+    categories=[self.session.merge(parser.parse(cat)) for cat in theme.element.xpath(parser.xPath)]
     log.debug('categories: %s'%(categories))
-    theme.addCategories(categories)
+    #theme.addCategories(categories)
     return categories
 
-  def makeEmissions(self,category):
-    emPath='..//a'
-    emissions=[Emission(em) for em in category.element.xpath(emPath)]
-    category.addEmissions(emissions)
+  def makeEmissions(self,categorie):
+    #emPath='..//a'
+    parser=EmissionParser(categorie)
+    emissions=[self.session.merge(parser.parse(em)) for em in categorie.element.xpath(parser.xPath)]
+    #category.addEmissions(emissions)
     return emissions
 
-  def save(self,update=False):
-    for t in self.themes.values():
-      try:
-        t.save(update)
-      except Wtf,e:
-        log.error(e)
-        continue
-      for cat in t.categories.values():
-        cat.save(update)
-        for em in cat.emissions.values():
-          em.save(update)
-    return
-
-
+  def save(self):
+    pass
+    

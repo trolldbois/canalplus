@@ -6,7 +6,7 @@
 
 import logging
 
-from core import Base,Database,Element,Fetcher,parseElement
+from core import Base,Element,Fetcher
 
 from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship

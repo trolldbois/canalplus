@@ -13,6 +13,9 @@ import StringIO, gzip
 #mechanize
 from lxml.etree import tostring
 
+from model import Theme,Categorie,Emission,Video,Stream
+
+
 log=logging.getLogger('core')
 
 SERVER='www.canalplus.fr'
@@ -30,15 +33,6 @@ def remove_html_tags(data):
     p = re.compile(r'<.*?>')
     return p.sub('', data)
 
-class Wtf(Exception):
-  def __init__(self,obj=None):
-    self.obj=obj
-  def __str__(self):
-    if self.obj is not None:
-      return '%s'%(self.obj.__dict__)
-    return '' 
-    
-  pass
 
 class Fetcher():
   headers={'Accept-Language': 'fr,en-us;q=0.7,en;q=0.3', 
@@ -110,151 +104,126 @@ class Fetcher():
     return
 
 
-def parseElement(obj,el):
-  if el is None:
-    return
-  obj.element=el
-  obj.log.debug('Creating a %s'%obj.__class__.__name__)
-  res=obj.element.xpath(obj.aPath)
-  if len(res) != 1:
-    obj.log.debug('DOM error, falling back to xpath string(), no url ')
-  if len(res)==0:
-    obj.text=obj.element.xpath('string()')
-  else:
-    obj.a=res[0]
-    obj.log.debug('A %s'%(tostring(obj.a)))
-    obj.text=obj.a.text
-    obj.log.debug('TEXT %s '%(obj.text))
-    obj.url=obj.a.get('href')
-    obj.log.debug('url %s '%(obj.url))
-  #if obj.text is not None:
-  #  #print obj.text
-  #  #obj.text=obj.text.decode(obj.encoding)
-  return    
-
-
-class Element(object):
-  encoding='utf-8'
-  element=None
-  a=None
-  text=None
-  url=None
-  #def __init__(self):
-  #  self.log=logging.getLogger(__class__.__name__)
-  def writeToFile(self,dirname='./test'):
-    '''
-    save content to file <dirname>/<self.id>
-    '''
-    filename=os.path.sep.join([dirname,'%s-%d'%(self.__class__.__name__,self.getId()) ])
-    fout=file(filename,'w')
-    fout.write(self.data)
-    log.info('Written to file %s'%(filename))
-    return
-
-class Database:
-  filename=None
-  table=None
-  conn=None
-  def __init__(self,table,filename='canalplus.db'):
-    self.engine = create_engine('sqlite://./'+filename, echo=True)
-    self.filename=filename
-    self.table=table
-    self.conn=sqlite3.connect(self.filename)
-    return
-    
-  def check(self):
-    ''' check problems with database
-    '''
-    if (not os.access(self.filename,os.W_OK)):
-      raise IOError('File is not writeable')
-    elif (not os.access(self.filename,os.R_OK)):
-      raise IOError('File is not readable')
-    elif (self.table is None):
-      raise NotImplementedError("self.table")
-    elif (self.schema is None):
-      raise NotImplementedError("self.schema")
-    return
-
-  def checkOrCreate(self):
-    self.check()
-    # check database ?
-    return
-
-  def checkOrCreateTable(self):
-    '''
-    Check Table or creates it.
-    '''
-    self.checkOrCreate()
-    try:
-      self.conn.execute("CREATE TABLE IF NOT EXISTS %s %s"%(self.table,self.schema) )
-      self.conn.commit()
-    except Exception, e:
-      self.conn.rollback()
-      raise e
-    pass
-    
-  def selectByID(self,elId):
-    cursor=self.conn.cursor()
-    log.debug( "%s - %s " % (self._SELECT_ID%(self.table),elId) )
-    cursor.execute(self._SELECT_ID%(self.table),(elId,))
-    return cursor
-  
-  def selectByName(self,desc):
-    cursor=self.conn.cursor()
-    log.debug( "%s - %s " % (self._SELECT_DESC%(self.table),desc))
-    cursor.execute(self._SELECT_DESC%(self.table),(desc,))
-    return cursor
-
-  def selectByParent(self,elId):
-    cursor=self.conn.cursor()
-    log.debug( "%s - %s " % (self._SELECT_PARENT_ID%(self.table),elId))
-    cursor.execute(self._SELECT_PARENT_ID%(self.table),(elId,))
-    return cursor
- 
-  def insertmany(self, args):
-    self.conn.execute('BEGIN TRANSACTION')
-    try:
-      log.debug( "%s - %s " % (self._INSERT_ALL%self.table,args) )   
-      self.conn.executemany(self._INSERT_ALL%self.table,args)
-      self.conn.commit()
-    except Exception, e:
-      self.conn.rollback()
-      raise e
-    return
-
-  def updatemany(self, args):
-    self.conn.execute('BEGIN TRANSACTION')
-    try:
-      log.debug( "%s - %s " % (self._UPDATE_ALL%self.table,args) )   
-      self.conn.executemany(self._UPDATE_ALL%self.table,args)
-      self.conn.commit()
-    except Exception, e:
-      self.conn.rollback()
-      log.error('%s -> %s'%(self._UPDATE_ALL%self.table,args))
-      raise e
+class Parser:
+  def __init__(self,cls,subPath):
+    self.cls=cls
+    self.subPath=subPath
+    self.log=logging.getLogger(self.__class__.__name__)
     return
   
-  def __setitem__(self,key,item):
-    myID=int(key)
-    #except ValueError,e:
-    if myID not in self: #costly 2
-      self.insertmany([item])
+  def parse(self,el):
+    if el is None:
+      self.log.debug('Element is None')
+      return None
+    self.log.debug('Parsing a %s'%self.cls)
+    text=''
+    url=''
+    a=''
+    res=el.xpath(self.subPath)
+    if len(res)==0:
+      self.log.debug('DOM error, falling back to xpath string(), no url ')
+      self.log.debug('tree element : %s'%(repr(tostring(el))))
+      text=el.xpath('string()')
     else:
-      self.updatemany([item])
+      a=res[0]
+      self.log.debug('A %s'%(repr(tostring(a))))
+      text=a.text
+      self.log.debug('TEXT %s '%(repr(text) ))
+      url=a.get('href')
+      self.log.debug('url %s '%(repr(url) ))
+    #if text is not None:
+    #  #print text
+    #  #text=obj.text.decode(obj.encoding)
+    obj=self.makeInstance(a,text,url)
+    obj.element=el
+    self.log.debug(obj)
+    self.log.debug('')
+    return obj
+  #
+  def makeInstance(self,a,text,url):
+    raise NotImplementedError()
+
+class ThemeParser(Parser):
+  tidRE='.+pid(\d+).+'
+  xPath='/html/body/div[2]/div[9]/div[position()>2 and position()<8]'
+  subPath='./h2[1]/a[1]'
+  def __init__(self):
+    cls=Theme
+    Parser.__init__(self,cls,self.subPath)
     return
-    
-  def __contains__(self,item):
-    try:
-      self[item] #1
-      return True
-    except KeyError,e:
-      return False
+  #
+  def getId(self,url):
+    '''      Get theme's unique identifier.    '''
+    tid=None
+    # if there is url, we can parse it to get the TID
+    if url is not None :
+      # TID is in the URL
+      tids=re.findall(self.tidRE,url)
+      if len(tids) !=1:
+        log.warning('Erreur while parsing TID')
+        return None
+      tid=int(tids[0])
+    else:
+      return None
+    return tid
+  #
+  def makeInstance(self,a,text,url):
+    obj=self.cls(tid=self.getId(url),url=url,text=text)
+    return obj
+  
+class CategorieParser(Parser):
+  xPath='./div/h3'
+  subPath='./a'
+  def __init__(self,theme):
+    cls=Categorie
+    self.theme=theme
+    Parser.__init__(self,cls,self.subPath)
+    return
+  #
+  def makeInstance(self,a,text,url):
+    obj=self.cls(text=text,tid=self.theme.tid)
+    return obj
 
+class EmissionParser(Parser):
+  xPath='..//a'
+  subPath='.'
+  pidRE='.+[c,p]id(\d+).+'
+  # the regexp to get an Video Id from a url
+  vidRE='.vid=(\d+)'
+  def __init__(self,cat):
+    cls=Emission
+    self.cat=cat
+    Parser.__init__(self,cls,self.subPath)
+    return
+  def getId(self,url):
+    '''      Get emission's unique identifier.
+      Programme Id.
+    '''
+    # if there is not url, we can't parse it to get the PID
+    # PID is in the URL
+    pids=re.findall(self.pidRE,url)
+    if len(pids) !=1:
+      log.warning('Erreur while parsing PID')
+      return None
+    pid=int(pids[0])
+    return pid
+  #
+  def makeInstance(self,a,text,url):
+    obj=self.cls(pid=self.getId(url),url=url,text=text,cid=self.cat.cid)
+    return obj
 
+class VideoParser(Parser):
+  def __init__(self):
+    aPath='.'
+    cls=Video
+    Parser.__init__(self,cls,aPath)
+    return
 
-
-
-#Base=declarative_base(cls=Element)
-Base=declarative_base()
+class StreamParser(Parser):
+  def __init__(self):
+    aPath='.'
+    cls=Stream
+    Parser.__init__(self,cls,aPath)
+    return
 
 

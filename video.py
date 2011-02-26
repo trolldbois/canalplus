@@ -5,7 +5,7 @@
 #
 
 import logging
-from core import Base,Database,Element,Fetcher,Wtf,parseElement
+from core import Base,Element,Fetcher,Wtf
 from stream import Stream
 
 import lxml.etree
@@ -124,13 +124,6 @@ class Video(Base):
 
   parsed=False
   srcUrl='http://service.canal-plus.com/video/rest/getVideosLiees/cplus/%d'
-
-  # Xpath values
-  videosPath='/VIDEOS/VIDEO'
-  streamPath='./MEDIA/VIDEOS/*'
-  idPath='./ID'
-  infoTitrePath='./INFOS/TITRAGE/TITRE'
-  infoSousTitrePath='./INFOS/TITRAGE/SOUS_TITRE'
 
   def __init__(self,vid,pid,text):
     self.pid=int(pid)

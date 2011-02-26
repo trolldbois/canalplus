@@ -5,7 +5,7 @@
 #
 
 import logging,os,urlparse
-from core import Base,Database,Element,Fetcher,Wtf
+from core import Base,Element,Fetcher,Wtf
 
 from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, UniqueConstraint
 
