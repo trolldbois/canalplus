@@ -1,0 +1,12 @@
+*.pyc
+*~
+analysis-20110130
+cache/
+canalplus.db
+log.debug
+log.error
+output/
+show.log
+test/
+update.log
+urls

@@ -65,6 +65,9 @@ class Update:
       except EmissionNotFetchable,e:
         log.warning(e)
         continue
+      except Exception,e:
+        log.error(e)
+        continue
       done+=1
       log.info("[%3d/%3d] %d new videos \t %s"%(done,ems.count()-done, len(videos),em))
     return
@@ -77,10 +80,14 @@ class Update:
     newVideos=set()
     # Refresh content
     fetcher=EmissionFetcher()
-    data=fetcher.fetch(emission)
-
-    root=lxml.html.fromstring(data)
     videoParser=VideoParser(emission)
+    data=fetcher.fetch(emission)
+    try:
+      root=lxml.html.fromstring(data)
+    except lxml.etree.XMLSyntaxError,e:
+      videoParser.writeToFile(data,emission,emission.pid)
+      log.error('Parsing error')
+      return []
     videos=set([videoParser.parse(element) for element in root.xpath(videoParser.xPath)])
     log.warning('%s'%(videos))
     for vid in videos:
